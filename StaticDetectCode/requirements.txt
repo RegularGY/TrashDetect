@@ -1,0 +1,12 @@
+# EcoSort AI — Requirements
+# Install with: pip install -r requirements.txt
+# Note: Install PyTorch separately with CUDA support first:
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+ultralytics>=8.4.0
+opencv-python>=4.6.0
+Pillow>=7.1.2
+matplotlib>=3.3.0
+pandas
+seaborn
+flask>=2.0.0

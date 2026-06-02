@@ -1,0 +1,35 @@
+# ─── Dataset ───────────────────────────────
+Dataset/train/
+Dataset/valid/
+Dataset/test/
+Dataset/raw_images/
+Dataset/phase2_raw/
+
+# ─── Model weights ─────────────────────────
+*.pt
+*.onnx
+
+# ─── YOLO training runs ─────────────────────
+runs/
+
+# ─── Output images ──────────────────────────
+Result(Output)/
+
+# ─── Virtual environment ────────────────────
+ecosort-env/
+
+# ─── Python cache ───────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ─── VS Code ────────────────────────────────
+.vscode/
+
+# ─── Windows system files ───────────────────
+Thumbs.db
+desktop.ini
+
+# ─── Jupyter notebooks checkpoints ─────────
+.ipynb_checkpoints/
