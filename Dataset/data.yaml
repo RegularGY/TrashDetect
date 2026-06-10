@@ -8,6 +8,6 @@ names: ['cardboard', 'glass', 'metal', 'paper', 'plastic']
 roboflow:
   workspace: manass-workspace-vy2gz
   project: trashdetect-s3bsb
-  version: 2
+  version: 3
   license: CC BY 4.0
-  url: https://universe.roboflow.com/manass-workspace-vy2gz/trashdetect-s3bsb/dataset/2
+  url: https://universe.roboflow.com/manass-workspace-vy2gz/trashdetect-s3bsb/dataset/3

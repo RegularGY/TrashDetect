@@ -22,9 +22,9 @@ from ultralytics import YOLO
 # ─────────────────────────────────────────────
 
 # Path to your trained model weights
-MODEL_PATH = r"C:\Users\Victus\Documents\GitHub\TrashDetect\runs\detect\ecosort_v2\weights\best.pt"
+MODEL_PATH = r"C:\Users\Victus\Documents\GitHub\TrashDetect\runs\detect\ecosort_v3\weights\best.pt"
 
-# Default input folder
+# Default input folderpython detect.py
 INPUT_FOLDER = r"C:\Users\Victus\Documents\GitHub\TrashDetect\Test_Image(Input)"
 
 # Output folder where results are saved
@@ -61,15 +61,15 @@ def draw_detection(image, box, class_name, confidence, colour):
     x1, y1, x2, y2 = map(int, box)
 
     # Draw bounding box rectangle
-    cv2.rectangle(image, (x1, y1), (x2, y2), colour, 2)
+    cv2.rectangle(image, (x1, y1), (x2, y2), colour, 3)
 
     # Build label text: "plastic 0.93"
     label = f"{class_name} {confidence:.2f}"
 
     # Calculate label background size
     font            = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale      = 0.6
-    font_thickness  = 2
+    font_scale      = 1.2
+    font_thickness  = 3
     (text_w, text_h), baseline = cv2.getTextSize(label, font, font_scale, font_thickness)
 
     # Draw filled rectangle behind label for readability
