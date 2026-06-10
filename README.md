@@ -1,10 +1,10 @@
 # EcoSort AI — Trash Detection and Classification System
 
-An AI-powered waste detection and classification system built with YOLOv8 and Python. The system detects trash in images, draws bounding boxes around detected objects, and displays the predicted category with a confidence percentage. A web-based interface built with Flask and HTML allows users to upload images and view detection results without using the terminal.
+An AI-powered waste detection and classification system built with a hybrid YOLOv8 + ResNet18 CNN architecture. The system detects trash in images, draws bounding boxes around detected objects, and displays the predicted category with a confidence percentage. A web-based interface built with Flask and HTML allows users to upload images and view detection results without using the terminal.
 
 ## Project Overview
 
-This project uses a phased dataset strategy combined with a hybrid YOLO + CNN architecture to detect and classify recyclable waste materials. Each dataset phase introduces a single new variable — object count, background complexity, or contamination level — to progressively improve model robustness.
+This project uses a phased dataset strategy combined with a hybrid YOLO + CNN architecture to detect and classify recyclable waste materials. YOLOv8 handles object localisation and detection, while ResNet18 CNN refines the classification on each cropped detection. Each dataset phase introduces a single new variable — object count, background complexity, or contamination level — to progressively improve model robustness.
 
 ### Classes
 - Cardboard
@@ -23,8 +23,32 @@ This project uses a phased dataset strategy combined with a hybrid YOLO + CNN ar
 | Phase 4 | Dirty multiple objects, varied backgrounds | ✅ Complete |
 | Phase 5 | Real world naturally occurring trash | ✅ Complete |
 | Phase 5.5 | HTML + Flask web UI | ✅ Complete |
-| Phase 6 | YOLO + CNN hybrid | 🔄 In Progress |
-| Phase 7 | Final testing and evaluation | ⏳ Planned |
+| Phase 6 | YOLO + CNN hybrid | ✅ Complete |
+| Phase 7 | Final testing and evaluation | 🔄 In Progress |
+
+---
+
+## How the Hybrid System Works
+
+```
+Input Image
+     ↓
+OpenCV Preprocessing (noise removal + contrast enhancement)
+     ↓
+YOLOv8 Detection — finds WHERE the object is + initial class label
+     ↓
+Crop each detected region (Region of Interest)
+     ↓
+ResNet18 CNN — classifies the cropped object
+     ↓
+Decision Logic:
+  If CNN confidence ≥ 70% → use CNN label  [CNN]
+  Otherwise              → keep YOLO label [YOLO]
+     ↓
+Draw bounding box + label + confidence + model indicator
+     ↓
+Save to Result(Output)/
+```
 
 ---
 
@@ -104,8 +128,10 @@ Dataset/
 TrashDetect/
 ├── run.bat                        ← double click to launch the web UI
 ├── StaticDetectCode/
-│   ├── app.py                     ← Flask web server
-│   ├── detect.py                  ← command-line inference script
+│   ├── app.py                     ← Flask web server (hybrid mode)
+│   ├── detect.py                  ← command-line inference script (hybrid mode)
+│   ├── generate_crops.py          ← generates CNN training crops from YOLO
+│   ├── train_cnn.py               ← trains ResNet18 CNN classifier
 │   ├── requirements.txt           ← package dependencies
 │   ├── templates/
 │   │   └── index.html             ← web UI
@@ -115,6 +141,7 @@ TrashDetect/
 │   ├── train/                     ← training images (not pushed)
 │   ├── valid/                     ← validation images (not pushed)
 │   └── test/                      ← test images (not pushed)
+├── CNN_Dataset/                   ← cropped CNN training images (not pushed)
 ├── Test_Image(Input)/             ← place test images here (CLI mode)
 ├── Result(Output)/                ← detection results saved here
 ├── .gitignore
@@ -136,7 +163,8 @@ From the web UI you can:
 - Upload any image by drag and drop or file browser
 - Click **Detect Waste** to run detection
 - View the annotated result image with bounding boxes
-- See a detection summary table with class, confidence, recyclability and bin colour
+- See a detection summary table showing class, confidence, which model decided (YOLO or CNN), recyclability and bin colour
+- Track CNN override count — how many detections were refined by CNN
 - Click **Save Result** to download the annotated image
 
 ### Option B — Command Line
@@ -163,29 +191,42 @@ python detect.py --conf 0.70
 
 Custom model weights:
 ```bash
-python detect.py --model "path/to/best.pt"
+python detect.py --model "path/to/best.pt" --cnn "path/to/cnn.pt"
 ```
 
-Results are saved to `Result(Output)/` with bounding boxes, class labels, and confidence scores overlaid.
+Results are saved to `Result(Output)/` with bounding boxes, class labels, confidence scores, and model indicators overlaid.
 
 ---
 
 ## Training
 
-To train the model on your dataset:
+### YOLO Training
 
+Train from scratch:
 ```bash
 yolo detect train data=data.yaml model=yolov8n.pt epochs=50 imgsz=416 batch=2 workers=2 name=ecosort_v1
 ```
 
-To continue training from existing weights:
+Continue from existing weights:
 ```bash
 yolo detect train data=data.yaml model=runs/detect/ecosort_v2/weights/best.pt epochs=50 imgsz=416 batch=2 workers=2 name=ecosort_v3
 ```
 
-Trained model weights are saved to:
+### CNN Training
+
+Step 1 — Generate cropped training images from YOLO detections:
+```bash
+python generate_crops.py
 ```
-runs/detect/ecosort_v1/weights/best.pt
+
+Step 2 — Train ResNet18 CNN on the crops:
+```bash
+python train_cnn.py
+```
+
+CNN model weights are saved to:
+```
+runs/cnn/ecosort_cnn_v1.pt
 ```
 
 ---
@@ -205,7 +246,7 @@ Detection is run on the preprocessed image but bounding boxes are drawn on the o
 
 ## Model Performance
 
-### ecosort_v2 — Phase 1 only (2,386 images)
+### YOLO — ecosort_v2 (Phase 1 only, 2,386 images)
 
 | Class | Precision | Recall | mAP50 |
 |-------|-----------|--------|-------|
@@ -216,7 +257,7 @@ Detection is run on the preprocessed image but bounding boxes are drawn on the o
 | Paper | 0.965 | 0.887 | 0.956 |
 | Plastic | 0.933 | 0.876 | 0.963 |
 
-### ecosort_v3 — All phases (2,931 images)
+### YOLO — ecosort_v3 (All phases, 2,931 images)
 
 | Class | Precision | Recall | mAP50 |
 |-------|-----------|--------|-------|
@@ -227,11 +268,23 @@ Detection is run on the preprocessed image but bounding boxes are drawn on the o
 | Paper | 0.935 | 0.870 | 0.938 |
 | Plastic | 0.921 | 0.820 | 0.925 |
 
+### CNN — ecosort_cnn_v1 (ResNet18, 3,779 crops)
+
+| Metric | Value |
+|--------|-------|
+| Architecture | ResNet18 (pretrained ImageNet) |
+| Training images | 3,024 |
+| Validation images | 755 |
+| Best validation accuracy | **93.0%** |
+| Training time | 16.9 minutes |
+| CNN override threshold | 70% confidence |
+
 ---
 
 ## Technologies Used
 
-- [YOLOv8](https://github.com/ultralytics/ultralytics) — object detection
+- [YOLOv8](https://github.com/ultralytics/ultralytics) — object detection and localisation
+- [ResNet18](https://pytorch.org/vision/stable/models/resnet.html) — CNN classification refinement
 - [PyTorch](https://pytorch.org/) — deep learning framework
 - [OpenCV](https://opencv.org/) — image preprocessing and bounding box rendering
 - [Flask](https://flask.palletsprojects.com/) — web server for UI
@@ -245,4 +298,5 @@ Detection is run on the preprocessed image but bounding boxes are drawn on the o
 This project is developed as part of a final year project at UiTM, addressing waste management challenges in Malaysia.
 
 ---
+
 

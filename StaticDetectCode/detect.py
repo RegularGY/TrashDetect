@@ -1,6 +1,9 @@
 # =============================================================
-#  EcoSort AI — Inference Script
+#  EcoSort AI — Hybrid YOLO + CNN Inference Script
 #  detect.py
+#
+#  Phase 6: YOLO detects and localises objects,
+#           ResNet18 CNN refines the classification.
 #
 #  Usage:
 #    python detect.py --source "path/to/image.jpg"
@@ -16,122 +19,180 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import torch
+import torch.nn as nn
+from torchvision import models, transforms
+from PIL import Image
 from ultralytics import YOLO
 
 # ─────────────────────────────────────────────
-#  CONFIG — update these paths if needed
+#  CONFIG
 # ─────────────────────────────────────────────
 
-# Path to your trained model weights
+# YOLO model path
 MODEL_PATH = r"C:\Users\Victus\Documents\GitHub\TrashDetect\runs\detect\ecosort_v3\weights\best.pt"
+
+# CNN model path
+CNN_PATH = r"C:\Users\Victus\Documents\GitHub\TrashDetect\runs\cnn\ecosort_cnn_v1.pt"
 
 # Default input folder
 INPUT_FOLDER = r"C:\Users\Victus\Documents\GitHub\TrashDetect\Test_Image(Input)"
 
-# Output folder where results are saved
+# Output folder
 OUTPUT_FOLDER = r"C:\Users\Victus\Documents\GitHub\TrashDetect\Result(Output)"
 
-# Minimum confidence threshold (0.0 - 1.0)
-# Detections below this confidence will be ignored
-CONFIDENCE_THRESHOLD = 0.50
+# YOLO minimum confidence threshold
+YOLO_CONFIDENCE = 0.50
 
-# ─────────────────────────────────────────────
-#  PREPROCESSING CONFIG
-# ─────────────────────────────────────────────
+# CNN confidence threshold
+# If CNN confidence >= this value, CNN label overrides YOLO
+# If CNN confidence < this value, YOLO label is kept
+CNN_CONFIDENCE_THRESHOLD = 0.70
 
-# Enable or disable individual preprocessing steps
-ENABLE_NOISE_REMOVAL    = True   # Gaussian blur to reduce noise
-ENABLE_CONTRAST_ENHANCE = True   # CLAHE contrast enhancement
-ENABLE_SHARPEN          = False   # Sharpening to recover detail after blur
+# CNN input size
+CNN_SIZE = 224
 
-# Bounding box and label colours per class
+# Preprocessing flags
+ENABLE_NOISE_REMOVAL    = True
+ENABLE_CONTRAST_ENHANCE = True
+ENABLE_SHARPEN          = False
+
+# Bounding box colours per class (BGR)
 CLASS_COLOURS = {
-    "cardboard": (255, 165,   0),   # Orange
-    "glass":     ( 64, 224, 208),   # Turquoise
+    "cardboard": (0,   165, 255),   # Orange
+    "glass":     (208, 224,  64),   # Turquoise
     "metal":     (192, 192, 192),   # Silver
-    "paper":     (255, 255, 102),   # Yellow
-    "plastic":   ( 51, 153, 255),   # Blue
+    "paper":     (102, 255, 255),   # Yellow
+    "plastic":   (255, 153,  51),   # Blue
 }
-
-DEFAULT_COLOUR = (0, 255, 0)  # Green fallback
+DEFAULT_COLOUR = (0, 255, 0)
 
 # Supported image extensions
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 
 # ─────────────────────────────────────────────
-#  PREPROCESSING FUNCTION
+#  LOAD MODELS
+# ─────────────────────────────────────────────
+
+def load_yolo(model_path):
+    """Load YOLOv8 detection model."""
+    print(f"[INFO] Loading YOLO model from: {model_path}")
+    if not Path(model_path).exists():
+        print(f"[ERROR] YOLO model not found: {model_path}")
+        sys.exit(1)
+    model = YOLO(model_path)
+    print(f"[INFO] YOLO loaded. Classes: {model.names}")
+    return model
+
+
+def load_cnn(cnn_path):
+    """Load ResNet18 CNN classification model."""
+    print(f"[INFO] Loading CNN model from: {cnn_path}")
+    if not Path(cnn_path).exists():
+        print(f"[WARNING] CNN model not found: {cnn_path}")
+        print(f"[WARNING] Running in YOLO-only mode.")
+        return None, None
+
+    checkpoint = torch.load(cnn_path, map_location="cpu")
+    classes    = checkpoint["classes"]
+    num_classes = checkpoint["num_classes"]
+
+    # Rebuild ResNet18 architecture
+    model     = models.resnet18(weights=None)
+    model.fc  = nn.Linear(model.fc.in_features, num_classes)
+    model.load_state_dict(checkpoint["model_state_dict"])
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model  = model.to(device)
+    model.eval()
+
+    print(f"[INFO] CNN loaded. Classes: {classes}")
+    print(f"[INFO] CNN best val accuracy: {checkpoint.get('best_val_acc', 'N/A'):.1%}")
+    return model, classes
+
+
+# ─────────────────────────────────────────────
+#  PREPROCESSING
 # ─────────────────────────────────────────────
 
 def preprocess_image(image):
-    """
-    Applies OpenCV preprocessing to improve image quality before detection.
-
-    Steps:
-    1. Noise Removal    — Gaussian blur to reduce sensor noise and compression
-                          artefacts that can confuse edge detection in YOLO
-    2. Contrast Enhancement — CLAHE (Contrast Limited Adaptive Histogram
-                          Equalisation) applied per channel to improve object
-                          visibility under poor or uneven lighting conditions,
-                          as identified in the research gap of environmental
-                          sensitivity (Chapter 2)
-    3. Sharpening       — Unsharp mask to recover edge detail lost during
-                          the blur step, improving bounding box precision
-
-    Returns the preprocessed image (same shape and dtype as input).
-    """
+    """Apply OpenCV preprocessing before YOLO detection."""
     preprocessed = image.copy()
-
-    # ── Step 1: Noise Removal ────────────────
-    # Gaussian blur with a small kernel to smooth sensor noise
-    # without significantly blurring object edges
     if ENABLE_NOISE_REMOVAL:
         preprocessed = cv2.GaussianBlur(preprocessed, (3, 3), 0)
-
-    # ── Step 2: Contrast Enhancement (CLAHE) ─
-    # CLAHE operates on the luminance channel in LAB colour space
-    # to avoid colour distortion when enhancing contrast
     if ENABLE_CONTRAST_ENHANCE:
-        lab   = cv2.cvtColor(preprocessed, cv2.COLOR_BGR2LAB)
+        lab     = cv2.cvtColor(preprocessed, cv2.COLOR_BGR2LAB)
         l, a, b = cv2.split(lab)
-        clahe = cv2.createCLAHE(clipLimit=1.0, tileGridSize=(8, 8))
-        l     = clahe.apply(l)
-        lab   = cv2.merge((l, a, b))
+        clahe   = cv2.createCLAHE(clipLimit=1.0, tileGridSize=(8, 8))
+        l       = clahe.apply(l)
+        lab     = cv2.merge((l, a, b))
         preprocessed = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
-
-    # ── Step 3: Sharpening ───────────────────
-    # Unsharp mask: subtract a blurred version to enhance edges
     if ENABLE_SHARPEN:
         blurred      = cv2.GaussianBlur(preprocessed, (0, 0), 3)
         preprocessed = cv2.addWeighted(preprocessed, 1.5, blurred, -0.5, 0)
-
     return preprocessed
 
 
+# CNN image transform
+cnn_transform = transforms.Compose([
+    transforms.Resize((CNN_SIZE, CNN_SIZE)),
+    transforms.ToTensor(),
+    transforms.Normalize([0.485, 0.456, 0.406],
+                         [0.229, 0.224, 0.225])
+])
+
+
+def classify_crop(crop_bgr, cnn_model, cnn_classes):
+    """
+    Run ResNet18 CNN on a cropped object image.
+    Returns (class_name, confidence).
+    """
+    device = next(cnn_model.parameters()).device
+
+    # Convert BGR crop to PIL RGB
+    crop_rgb = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
+    pil_img  = Image.fromarray(crop_rgb)
+
+    # Transform and run
+    tensor = cnn_transform(pil_img).unsqueeze(0).to(device)
+
+    with torch.no_grad():
+        outputs     = cnn_model(tensor)
+        probs       = torch.softmax(outputs, dim=1)
+        confidence, predicted = torch.max(probs, 1)
+
+    class_name = cnn_classes[predicted.item()]
+    conf_value = confidence.item()
+
+    return class_name, conf_value
+
+
 # ─────────────────────────────────────────────
-#  HELPER FUNCTIONS
+#  DRAWING
 # ─────────────────────────────────────────────
 
-def draw_detection(image, box, class_name, confidence, colour):
+def draw_detection(image, box, class_name, yolo_conf, cnn_conf, model_used, colour):
     """
-    Draws a bounding box and label on the image.
-    Returns the annotated image.
+    Draws bounding box and label on the image.
+    Shows which model made the final decision.
     """
     x1, y1, x2, y2 = map(int, box)
 
-    # Draw bounding box rectangle
+    # Draw bounding box
     cv2.rectangle(image, (x1, y1), (x2, y2), colour, 3)
 
-    # Build label text: "plastic 0.93"
-    label = f"{class_name} {confidence:.2f}"
+    # Build label
+    if model_used == "CNN":
+        label = f"{class_name} {cnn_conf:.2f} [CNN]"
+    else:
+        label = f"{class_name} {yolo_conf:.2f} [YOLO]"
 
-    # Calculate label background size
     font           = cv2.FONT_HERSHEY_SIMPLEX
     font_scale     = 1.2
     font_thickness = 3
     (text_w, text_h), baseline = cv2.getTextSize(label, font, font_scale, font_thickness)
 
-    # Draw filled rectangle behind label for readability
     label_y = max(y1 - 10, text_h + 10)
     cv2.rectangle(
         image,
@@ -140,8 +201,6 @@ def draw_detection(image, box, class_name, confidence, colour):
         colour,
         thickness=cv2.FILLED
     )
-
-    # Draw label text in black on top of coloured background
     cv2.putText(
         image, label,
         (x1 + 2, label_y - 4),
@@ -150,52 +209,51 @@ def draw_detection(image, box, class_name, confidence, colour):
         font_thickness,
         cv2.LINE_AA
     )
-
     return image
 
 
+# ─────────────────────────────────────────────
+#  SUMMARY
+# ─────────────────────────────────────────────
+
 def print_summary(results_log):
-    """Prints a summary table of all detections."""
-    print("\n" + "=" * 55)
+    print("\n" + "=" * 65)
     print("  DETECTION SUMMARY")
-    print("=" * 55)
-    print(f"  {'Image':<25} {'Class':<12} {'Confidence':>10}")
-    print("-" * 55)
+    print("=" * 65)
+    print(f"  {'Image':<22} {'Class':<12} {'Confidence':>10}  {'Model'}")
+    print("-" * 65)
 
     if not results_log:
         print("  No detections found.")
     else:
-        for entry in results_log:
-            print(f"  {entry['image']:<25} {entry['class']:<12} {entry['confidence']:>9.1%}")
+        for e in results_log:
+            conf = e["cnn_conf"] if e["model_used"] == "CNN" else e["yolo_conf"]
+            print(f"  {e['image']:<22} {e['class']:<12} {conf:>9.1%}  [{e['model_used']}]")
 
-    print("=" * 55)
-    print(f"  Total detections: {len(results_log)}")
-    print("=" * 55 + "\n")
+    yolo_count = sum(1 for e in results_log if e["model_used"] == "YOLO")
+    cnn_count  = sum(1 for e in results_log if e["model_used"] == "CNN")
+
+    print("=" * 65)
+    print(f"  Total detections : {len(results_log)}")
+    print(f"  YOLO decisions   : {yolo_count}")
+    print(f"  CNN overrides    : {cnn_count}")
+    print("=" * 65 + "\n")
 
 
 def get_image_paths(source):
-    """
-    Returns a list of image file paths from a file or folder.
-    """
     source = Path(source)
-
     if source.is_file():
         if source.suffix.lower() in IMAGE_EXTENSIONS:
             return [source]
         else:
-            print(f"[ERROR] File '{source}' is not a supported image format.")
+            print(f"[ERROR] Unsupported format: {source}")
             sys.exit(1)
-
     elif source.is_dir():
-        paths = [
-            p for p in source.iterdir()
-            if p.suffix.lower() in IMAGE_EXTENSIONS
-        ]
+        paths = [p for p in source.iterdir() if p.suffix.lower() in IMAGE_EXTENSIONS]
         if not paths:
             print(f"[ERROR] No images found in '{source}'")
             sys.exit(1)
         return sorted(paths)
-
     else:
         print(f"[ERROR] Source '{source}' does not exist.")
         sys.exit(1)
@@ -205,111 +263,128 @@ def get_image_paths(source):
 #  MAIN DETECTION FUNCTION
 # ─────────────────────────────────────────────
 
-def run_detection(source, model_path, output_folder, conf_threshold):
+def run_detection(source, model_path, cnn_path, output_folder, conf_threshold):
     """
-    Main detection pipeline:
-    1. Load model
-    2. Loop through images
-    3. Preprocess image with OpenCV
-    4. Run YOLO detection
-    5. Draw bounding boxes with OpenCV
-    6. Save to output folder
-    7. Print results
+    Hybrid YOLO + CNN detection pipeline:
+    1. Load YOLO and CNN models
+    2. For each image:
+       a. Preprocess with OpenCV
+       b. YOLO detects objects and draws bounding boxes
+       c. For each detection, crop the ROI
+       d. CNN classifies the crop
+       e. If CNN confidence >= threshold, CNN overrides YOLO label
+       f. Draw final result with model indicator
+    3. Save output and print summary
     """
 
-    # ── Load model ──────────────────────────
-    print(f"\n[INFO] Loading model from: {model_path}")
-    if not Path(model_path).exists():
-        print(f"[ERROR] Model file not found: {model_path}")
-        print("        Check that MODEL_PATH in detect.py points to your best.pt file.")
-        sys.exit(1)
+    # Load models
+    yolo_model             = load_yolo(model_path)
+    cnn_model, cnn_classes = load_cnn(cnn_path)
 
-    model = YOLO(model_path)
-    print(f"[INFO] Model loaded successfully.")
-    print(f"[INFO] Classes: {model.names}")
+    hybrid_mode = cnn_model is not None
+    print(f"\n[INFO] Mode: {'Hybrid YOLO + CNN' if hybrid_mode else 'YOLO only'}")
+    print(f"[INFO] CNN confidence threshold: {CNN_CONFIDENCE_THRESHOLD:.0%}")
+    print(f"[INFO] Preprocessing: noise={'ON' if ENABLE_NOISE_REMOVAL else 'OFF'}, "
+          f"contrast={'ON' if ENABLE_CONTRAST_ENHANCE else 'OFF'}\n")
 
-    # ── Print preprocessing status ───────────
-    print(f"\n[INFO] Preprocessing steps active:")
-    print(f"       Noise removal    : {'ON' if ENABLE_NOISE_REMOVAL else 'OFF'}")
-    print(f"       Contrast enhance : {'ON' if ENABLE_CONTRAST_ENHANCE else 'OFF'}")
-    print(f"       Sharpening       : {'ON' if ENABLE_SHARPEN else 'OFF'}\n")
-
-    # ── Prepare output folder ────────────────
+    # Prepare output folder
     Path(output_folder).mkdir(parents=True, exist_ok=True)
 
-    # ── Get image paths ──────────────────────
+    # Get image paths
     image_paths = get_image_paths(source)
-    print(f"[INFO] Found {len(image_paths)} image(s) to process.")
-    print(f"[INFO] Confidence threshold: {conf_threshold:.0%}\n")
+    print(f"[INFO] Found {len(image_paths)} image(s) to process.\n")
 
     results_log = []
     start_time  = time.time()
 
-    # ── Process each image ───────────────────
     for idx, image_path in enumerate(image_paths, 1):
-
         print(f"[{idx}/{len(image_paths)}] Processing: {image_path.name}")
 
-        # Read image with OpenCV
+        # Read image
         image = cv2.imread(str(image_path))
         if image is None:
-            print(f"  [WARNING] Could not read image: {image_path.name} — skipping.")
+            print(f"  [WARNING] Could not read: {image_path.name} — skipping.")
             continue
 
-        # ── Preprocess image ─────────────────
-        image_for_detection = preprocess_image(image)
-        print(f"  [INFO] Preprocessing applied.")
+        h, w = image.shape[:2]
 
-        # Run YOLO detection on preprocessed image
-        results = model(image_for_detection, conf=conf_threshold, verbose=False)
+        # Preprocess for YOLO
+        image_processed = preprocess_image(image)
 
-        detection_count = 0
+        # Run YOLO
+        results = yolo_model(image_processed, conf=conf_threshold, verbose=False)
 
-        # ── Loop through detections ──────────
         for result in results:
             boxes = result.boxes
-
             if boxes is None or len(boxes) == 0:
-                print(f"  [INFO] No detections in {image_path.name}")
+                print(f"  [INFO] No detections.")
                 continue
 
             for box in boxes:
-                # Get class ID and name
-                class_id   = int(box.cls[0])
-                class_name = model.names[class_id]
-                confidence = float(box.conf[0])
+                # YOLO outputs
+                yolo_class_id = int(box.cls[0])
+                yolo_class    = yolo_model.names[yolo_class_id]
+                yolo_conf     = float(box.conf[0])
+                coords        = box.xyxy[0].tolist()
+                x1, y1, x2, y2 = map(int, coords)
 
-                # Get bounding box coordinates (x1, y1, x2, y2)
-                coords = box.xyxy[0].tolist()
+                # Final decision defaults to YOLO
+                final_class  = yolo_class
+                final_conf   = yolo_conf
+                cnn_conf     = 0.0
+                model_used   = "YOLO"
 
-                # Get colour for this class
-                colour = CLASS_COLOURS.get(class_name, DEFAULT_COLOUR)
+                # ── CNN refinement ───────────────
+                if hybrid_mode:
+                    # Crop the detected region from original image
+                    pad   = 5
+                    cx1   = max(0, x1 - pad)
+                    cy1   = max(0, y1 - pad)
+                    cx2   = min(w, x2 + pad)
+                    cy2   = min(h, y2 + pad)
+                    crop  = image[cy1:cy2, cx1:cx2]
 
-                # Draw on ORIGINAL image (not preprocessed)
-                # so the output looks natural to the user
-                image = draw_detection(image, coords, class_name, confidence, colour)
+                    if crop.size > 0 and crop.shape[0] > 20 and crop.shape[1] > 20:
+                        cnn_class, cnn_conf = classify_crop(crop, cnn_model, cnn_classes)
 
-                # Log result
+                        # CNN overrides YOLO if confidence is high enough
+                        if cnn_conf >= CNN_CONFIDENCE_THRESHOLD:
+                            final_class = cnn_class
+                            final_conf  = cnn_conf
+                            model_used  = "CNN"
+
+                            if cnn_class != yolo_class:
+                                print(f"  ⚡ CNN override: {yolo_class} ({yolo_conf:.1%}) "
+                                      f"→ {cnn_class} ({cnn_conf:.1%})")
+
+                # Draw on original image
+                colour = CLASS_COLOURS.get(final_class, DEFAULT_COLOUR)
+                image  = draw_detection(
+                    image, coords,
+                    final_class, yolo_conf, cnn_conf,
+                    model_used, colour
+                )
+
                 results_log.append({
                     "image":      image_path.name,
-                    "class":      class_name,
-                    "confidence": confidence
+                    "class":      final_class,
+                    "yolo_class": yolo_class,
+                    "yolo_conf":  yolo_conf,
+                    "cnn_conf":   cnn_conf,
+                    "model_used": model_used,
                 })
 
-                detection_count += 1
-                print(f"  ✓ Detected: {class_name} ({confidence:.1%} confidence)")
+                conf_display = cnn_conf if model_used == "CNN" else yolo_conf
+                print(f"  ✓ {final_class} ({conf_display:.1%}) [{model_used}]")
 
-        # ── Save annotated original image ────
-        output_filename = f"result_{image_path.name}"
-        output_path     = Path(output_folder) / output_filename
+        # Save output
+        output_path = Path(output_folder) / f"result_{image_path.name}"
         cv2.imwrite(str(output_path), image)
         print(f"  Saved → {output_path}\n")
 
-    # ── Final summary ────────────────────────
     elapsed = time.time() - start_time
     print_summary(results_log)
-    print(f"[INFO] Processing complete in {elapsed:.1f} seconds.")
-    print(f"[INFO] Results saved to: {output_folder}\n")
+    print(f"[INFO] Done in {elapsed:.1f}s. Results saved to: {output_folder}\n")
 
 
 # ─────────────────────────────────────────────
@@ -318,32 +393,13 @@ def run_detection(source, model_path, output_folder, conf_threshold):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="EcoSort AI — Trash Detection Inference Script"
+        description="EcoSort AI — Hybrid YOLO + CNN Waste Detection"
     )
-    parser.add_argument(
-        "--source",
-        type=str,
-        default=INPUT_FOLDER,
-        help="Path to image file or folder (default: Test_Image(Input)/)"
-    )
-    parser.add_argument(
-        "--model",
-        type=str,
-        default=MODEL_PATH,
-        help="Path to trained model weights (default: ecosort_v3/weights/best.pt)"
-    )
-    parser.add_argument(
-        "--output",
-        type=str,
-        default=OUTPUT_FOLDER,
-        help="Path to output folder (default: Result(Output)/)"
-    )
-    parser.add_argument(
-        "--conf",
-        type=float,
-        default=CONFIDENCE_THRESHOLD,
-        help="Confidence threshold 0.0-1.0 (default: 0.50)"
-    )
+    parser.add_argument("--source",  type=str,   default=INPUT_FOLDER)
+    parser.add_argument("--model",   type=str,   default=MODEL_PATH)
+    parser.add_argument("--cnn",     type=str,   default=CNN_PATH)
+    parser.add_argument("--output",  type=str,   default=OUTPUT_FOLDER)
+    parser.add_argument("--conf",    type=float, default=YOLO_CONFIDENCE)
     return parser.parse_args()
 
 
@@ -352,6 +408,7 @@ if __name__ == "__main__":
     run_detection(
         source         = args.source,
         model_path     = args.model,
+        cnn_path       = args.cnn,
         output_folder  = args.output,
         conf_threshold = args.conf
     )
