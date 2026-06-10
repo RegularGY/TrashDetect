@@ -1,5 +1,5 @@
 # =============================================================
-#  EcoSort AI — Phase 1 Inference Script
+#  EcoSort AI — Inference Script
 #  detect.py
 #
 #  Usage:
@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 
 import cv2
+import numpy as np
 from ultralytics import YOLO
 
 # ─────────────────────────────────────────────
@@ -24,7 +25,7 @@ from ultralytics import YOLO
 # Path to your trained model weights
 MODEL_PATH = r"C:\Users\Victus\Documents\GitHub\TrashDetect\runs\detect\ecosort_v3\weights\best.pt"
 
-# Default input folderpython detect.py
+# Default input folder
 INPUT_FOLDER = r"C:\Users\Victus\Documents\GitHub\TrashDetect\Test_Image(Input)"
 
 # Output folder where results are saved
@@ -33,6 +34,15 @@ OUTPUT_FOLDER = r"C:\Users\Victus\Documents\GitHub\TrashDetect\Result(Output)"
 # Minimum confidence threshold (0.0 - 1.0)
 # Detections below this confidence will be ignored
 CONFIDENCE_THRESHOLD = 0.50
+
+# ─────────────────────────────────────────────
+#  PREPROCESSING CONFIG
+# ─────────────────────────────────────────────
+
+# Enable or disable individual preprocessing steps
+ENABLE_NOISE_REMOVAL    = True   # Gaussian blur to reduce noise
+ENABLE_CONTRAST_ENHANCE = True   # CLAHE contrast enhancement
+ENABLE_SHARPEN          = False   # Sharpening to recover detail after blur
 
 # Bounding box and label colours per class
 CLASS_COLOURS = {
@@ -47,6 +57,55 @@ DEFAULT_COLOUR = (0, 255, 0)  # Green fallback
 
 # Supported image extensions
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+
+
+# ─────────────────────────────────────────────
+#  PREPROCESSING FUNCTION
+# ─────────────────────────────────────────────
+
+def preprocess_image(image):
+    """
+    Applies OpenCV preprocessing to improve image quality before detection.
+
+    Steps:
+    1. Noise Removal    — Gaussian blur to reduce sensor noise and compression
+                          artefacts that can confuse edge detection in YOLO
+    2. Contrast Enhancement — CLAHE (Contrast Limited Adaptive Histogram
+                          Equalisation) applied per channel to improve object
+                          visibility under poor or uneven lighting conditions,
+                          as identified in the research gap of environmental
+                          sensitivity (Chapter 2)
+    3. Sharpening       — Unsharp mask to recover edge detail lost during
+                          the blur step, improving bounding box precision
+
+    Returns the preprocessed image (same shape and dtype as input).
+    """
+    preprocessed = image.copy()
+
+    # ── Step 1: Noise Removal ────────────────
+    # Gaussian blur with a small kernel to smooth sensor noise
+    # without significantly blurring object edges
+    if ENABLE_NOISE_REMOVAL:
+        preprocessed = cv2.GaussianBlur(preprocessed, (3, 3), 0)
+
+    # ── Step 2: Contrast Enhancement (CLAHE) ─
+    # CLAHE operates on the luminance channel in LAB colour space
+    # to avoid colour distortion when enhancing contrast
+    if ENABLE_CONTRAST_ENHANCE:
+        lab   = cv2.cvtColor(preprocessed, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=1.0, tileGridSize=(8, 8))
+        l     = clahe.apply(l)
+        lab   = cv2.merge((l, a, b))
+        preprocessed = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+
+    # ── Step 3: Sharpening ───────────────────
+    # Unsharp mask: subtract a blurred version to enhance edges
+    if ENABLE_SHARPEN:
+        blurred      = cv2.GaussianBlur(preprocessed, (0, 0), 3)
+        preprocessed = cv2.addWeighted(preprocessed, 1.5, blurred, -0.5, 0)
+
+    return preprocessed
 
 
 # ─────────────────────────────────────────────
@@ -67,9 +126,9 @@ def draw_detection(image, box, class_name, confidence, colour):
     label = f"{class_name} {confidence:.2f}"
 
     # Calculate label background size
-    font            = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale      = 1.2
-    font_thickness  = 3
+    font           = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale     = 1.2
+    font_thickness = 3
     (text_w, text_h), baseline = cv2.getTextSize(label, font, font_scale, font_thickness)
 
     # Draw filled rectangle behind label for readability
@@ -151,10 +210,11 @@ def run_detection(source, model_path, output_folder, conf_threshold):
     Main detection pipeline:
     1. Load model
     2. Loop through images
-    3. Run YOLO detection
-    4. Draw bounding boxes with OpenCV
-    5. Save to output folder
-    6. Print results
+    3. Preprocess image with OpenCV
+    4. Run YOLO detection
+    5. Draw bounding boxes with OpenCV
+    6. Save to output folder
+    7. Print results
     """
 
     # ── Load model ──────────────────────────
@@ -166,7 +226,13 @@ def run_detection(source, model_path, output_folder, conf_threshold):
 
     model = YOLO(model_path)
     print(f"[INFO] Model loaded successfully.")
-    print(f"[INFO] Classes: {model.names}\n")
+    print(f"[INFO] Classes: {model.names}")
+
+    # ── Print preprocessing status ───────────
+    print(f"\n[INFO] Preprocessing steps active:")
+    print(f"       Noise removal    : {'ON' if ENABLE_NOISE_REMOVAL else 'OFF'}")
+    print(f"       Contrast enhance : {'ON' if ENABLE_CONTRAST_ENHANCE else 'OFF'}")
+    print(f"       Sharpening       : {'ON' if ENABLE_SHARPEN else 'OFF'}\n")
 
     # ── Prepare output folder ────────────────
     Path(output_folder).mkdir(parents=True, exist_ok=True)
@@ -190,8 +256,12 @@ def run_detection(source, model_path, output_folder, conf_threshold):
             print(f"  [WARNING] Could not read image: {image_path.name} — skipping.")
             continue
 
-        # Run YOLO detection
-        results = model(image, conf=conf_threshold, verbose=False)
+        # ── Preprocess image ─────────────────
+        image_for_detection = preprocess_image(image)
+        print(f"  [INFO] Preprocessing applied.")
+
+        # Run YOLO detection on preprocessed image
+        results = model(image_for_detection, conf=conf_threshold, verbose=False)
 
         detection_count = 0
 
@@ -215,7 +285,8 @@ def run_detection(source, model_path, output_folder, conf_threshold):
                 # Get colour for this class
                 colour = CLASS_COLOURS.get(class_name, DEFAULT_COLOUR)
 
-                # Draw on image
+                # Draw on ORIGINAL image (not preprocessed)
+                # so the output looks natural to the user
                 image = draw_detection(image, coords, class_name, confidence, colour)
 
                 # Log result
@@ -228,7 +299,7 @@ def run_detection(source, model_path, output_folder, conf_threshold):
                 detection_count += 1
                 print(f"  ✓ Detected: {class_name} ({confidence:.1%} confidence)")
 
-        # ── Save annotated image ─────────────
+        # ── Save annotated original image ────
         output_filename = f"result_{image_path.name}"
         output_path     = Path(output_folder) / output_filename
         cv2.imwrite(str(output_path), image)
@@ -247,7 +318,7 @@ def run_detection(source, model_path, output_folder, conf_threshold):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="EcoSort AI — Phase 1 Trash Detection Inference Script"
+        description="EcoSort AI — Trash Detection Inference Script"
     )
     parser.add_argument(
         "--source",
@@ -259,7 +330,7 @@ def parse_args():
         "--model",
         type=str,
         default=MODEL_PATH,
-        help="Path to trained model weights (default: ecosort_v2/weights/best.pt)"
+        help="Path to trained model weights (default: ecosort_v3/weights/best.pt)"
     )
     parser.add_argument(
         "--output",
@@ -279,8 +350,8 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
     run_detection(
-        source        = args.source,
-        model_path    = args.model,
-        output_folder = args.output,
-        conf_threshold= args.conf
+        source         = args.source,
+        model_path     = args.model,
+        output_folder  = args.output,
+        conf_threshold = args.conf
     )
