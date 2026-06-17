@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EcoSort AI — Detection Summary</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --white:       #ffffff;
+    --bg:          #f7f8fa;
+    --surface:     #ffffff;
+    --border:      #e4e7ec;
+    --border-dark: #d0d5dd;
+    --text:        #101828;
+    --text-2:      #344054;
+    --text-3:      #667085;
+    --accent:      #16a34a;
+    --accent-light:#dcfce7;
+    --accent-dark: #15803d;
+    --danger:      #dc2626;
+    --danger-light:#fef2f2;
+    --info:        #2563eb;
+    --info-light:  #eff6ff;
+    --radius-sm:   6px;
+    --radius-md:   10px;
+    --radius-lg:   14px;
+    --shadow-sm:   0 1px 3px rgba(16,24,40,0.08);
+    --shadow-md:   0 4px 8px rgba(16,24,40,0.08);
+  }
+
+  body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 14px; line-height: 1.5; }
+
+  header { background: var(--white); border-bottom: 1px solid var(--border); padding: 0 32px; height: 60px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+  .header-left { display: flex; align-items: center; gap: 10px; }
+  .logo-icon { width: 32px; height: 32px; background: var(--accent); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; font-size: 16px; }
+  .logo-text { font-weight: 700; font-size: 16px; letter-spacing: -0.3px; }
+  .logo-text span { color: var(--accent); }
+  .header-badge { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 500; background: var(--accent-light); color: var(--accent-dark); padding: 2px 8px; border-radius: 20px; }
+  .header-right { display: flex; align-items: center; gap: 16px; font-size: 12px; color: var(--text-3); font-family: 'JetBrains Mono', monospace; }
+  .header-right a { color: var(--text-3); text-decoration: none; }
+  .header-right a:hover { color: var(--accent); }
+
+  main { max-width: 1100px; margin: 0 auto; padding: 32px 24px 80px; }
+
+  .page-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; flex-wrap: wrap; gap: 16px; }
+  .page-title { font-size: 22px; font-weight: 700; letter-spacing: -0.4px; margin-bottom: 4px; }
+  .page-subtitle { color: var(--text-3); font-size: 14px; }
+
+  .page-actions { display: flex; gap: 10px; flex-shrink: 0; }
+  .btn-action {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 9px 16px; border-radius: var(--radius-md);
+    font-size: 13px; font-weight: 600; cursor: pointer;
+    border: 1px solid var(--border-dark); background: var(--white);
+    color: var(--text-2); text-decoration: none; transition: all 0.15s;
+  }
+  .btn-action:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-primary { background: var(--accent); color: white; border: none; }
+  .btn-primary:hover { background: var(--accent-dark); color: white; }
+  .btn-danger:hover { border-color: var(--danger); color: var(--danger); }
+
+  .stats-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 24px; }
+  .stat-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; text-align: center; box-shadow: var(--shadow-sm); }
+  .stat-val { font-size: 24px; font-weight: 700; color: var(--accent); font-family: 'JetBrains Mono', monospace; line-height: 1; margin-bottom: 6px; }
+  .stat-label { font-size: 11.5px; color: var(--text-3); font-weight: 500; }
+
+  /* Filter tabs */
+  .filter-row { display: flex; gap: 8px; margin-bottom: 16px; }
+  .filter-tab {
+    padding: 7px 14px; border-radius: 20px; font-size: 12.5px; font-weight: 500;
+    cursor: pointer; border: 1px solid var(--border); background: var(--white); color: var(--text-2);
+    transition: all 0.15s;
+  }
+  .filter-tab.active { background: var(--accent); color: white; border-color: var(--accent); }
+  .filter-tab:hover:not(.active) { border-color: var(--accent); color: var(--accent); }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); overflow: hidden; }
+
+  .det-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .det-table th { text-align: left; padding: 10px 14px; font-size: 11px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.05em; background: var(--bg); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .det-table td { padding: 11px 14px; border-bottom: 1px solid var(--border); color: var(--text-2); vertical-align: middle; }
+  .det-table tr:last-child td { border-bottom: none; }
+  .det-table tr:hover td { background: var(--bg); }
+
+  .method-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 20px; white-space: nowrap; }
+  .method-static { background: var(--accent-light); color: var(--accent-dark); }
+  .method-camera { background: var(--info-light); color: #1e40af; }
+
+  .class-badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 500; white-space: nowrap; }
+  .class-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .badge-cardboard { background: #fff4e5; color: #b45309; } .badge-cardboard .class-dot { background: #f59e0b; }
+  .badge-glass     { background: #ecfdf5; color: #065f46; } .badge-glass     .class-dot { background: #10b981; }
+  .badge-metal     { background: #f8fafc; color: #475569; } .badge-metal     .class-dot { background: #94a3b8; }
+  .badge-paper     { background: #fefce8; color: #854d0e; } .badge-paper     .class-dot { background: #eab308; }
+  .badge-plastic   { background: #eff6ff; color: #1e40af; } .badge-plastic   .class-dot { background: #3b82f6; }
+
+  .conf-wrap { display: flex; align-items: center; gap: 8px; }
+  .conf-bar-bg { flex: 1; height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; min-width: 50px; }
+  .conf-bar-fill { height: 100%; border-radius: 3px; background: var(--accent); }
+  .conf-val { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 500; min-width: 38px; text-align: right; }
+
+  .model-badge { display: inline-flex; align-items: center; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; }
+  .model-cnn  { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+  .model-yolo { background: #fef9c3; color: #854d0e; border: 1px solid #fde68a; }
+
+  .recycle-badge { display: inline-flex; gap: 4px; font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 20px; background: var(--accent-light); color: var(--accent-dark); white-space: nowrap; }
+
+  .timestamp-text { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-3); white-space: nowrap; }
+  .source-text { font-size: 12px; color: var(--text-3); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .empty-state { padding: 70px 20px; text-align: center; color: var(--text-3); }
+  .empty-state-icon { font-size: 44px; margin-bottom: 14px; }
+  .empty-state-title { font-size: 15px; font-weight: 600; color: var(--text-2); margin-bottom: 6px; }
+  .empty-state-text { font-size: 13px; margin-bottom: 20px; }
+
+  @media (max-width: 900px) {
+    .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    .det-table { font-size: 12px; }
+  }
+  @media (max-width: 600px) {
+    header { padding: 0 16px; }
+    main { padding: 20px 16px 60px; }
+    .page-top { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div class="logo-icon">♻️</div>
+    <span class="logo-text">EcoSort <span>AI</span></span>
+    <span class="header-badge">📊 Detection Summary</span>
+  </div>
+  <div class="header-right">
+    <a href="/">← Home</a>
+  </div>
+</header>
+
+<main>
+
+  <div class="page-top">
+    <div>
+      <h1 class="page-title">Detection Summary</h1>
+      <p class="page-subtitle">All detection results from Static Image and Live Camera sessions in this run.</p>
+    </div>
+    <div class="page-actions">
+      <a class="btn-action" href="/static-detection">📤 New Static Detection</a>
+      <a class="btn-action" href="/live-detection">🎥 New Live Camera</a>
+      {% if total > 0 %}
+      <a class="btn-action btn-primary" href="/summary/download">⬇ Download PDF Report</a>
+      <button class="btn-action btn-danger" onclick="clearSummary()">🗑 Clear All</button>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if total > 0 %}
+
+  <div class="stats-grid">
+    <div class="stat-box"><div class="stat-val">{{ total }}</div><div class="stat-label">Total Detections</div></div>
+    <div class="stat-box"><div class="stat-val">{{ static_cnt }}</div><div class="stat-label">Static Image</div></div>
+    <div class="stat-box"><div class="stat-val">{{ camera_cnt }}</div><div class="stat-label">Live Camera</div></div>
+    <div class="stat-box"><div class="stat-val">{{ cnn_cnt }}</div><div class="stat-label">CNN Overrides</div></div>
+    <div class="stat-box"><div class="stat-val">{{ unique_cls }}</div><div class="stat-label">Unique Classes</div></div>
+  </div>
+
+  <div class="filter-row">
+    <div class="filter-tab active" data-filter="all" onclick="filterTable('all', this)">All</div>
+    <div class="filter-tab" data-filter="Static Image" onclick="filterTable('Static Image', this)">📤 Static Image</div>
+    <div class="filter-tab" data-filter="Live Camera" onclick="filterTable('Live Camera', this)">🎥 Live Camera</div>
+  </div>
+
+  <div class="card">
+    <table class="det-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Method</th>
+          <th>Source</th>
+          <th>Class</th>
+          <th>Confidence</th>
+          <th>Model</th>
+          <th>Recyclable</th>
+          <th>Bin</th>
+          <th>Time</th>
+        </tr>
+      </thead>
+      <tbody id="summaryBody">
+        {% for entry in entries %}
+        <tr data-method="{{ entry.method }}">
+          <td style="color:var(--text-3);font-family:'JetBrains Mono',monospace;font-size:11px">{{ entry.id }}</td>
+          <td>
+            <span class="method-badge {{ 'method-static' if entry.method == 'Static Image' else 'method-camera' }}">
+              {{ '📤' if entry.method == 'Static Image' else '🎥' }} {{ entry.method }}
+            </span>
+          </td>
+          <td><span class="source-text" title="{{ entry.source_filename }}">{{ entry.source_filename }}</span></td>
+          <td>
+            <span class="class-badge badge-{{ entry.class }}">
+              <span class="class-dot"></span>{{ entry.class }}
+            </span>
+          </td>
+          <td>
+            <div class="conf-wrap">
+              <div class="conf-bar-bg"><div class="conf-bar-fill" style="width:{{ entry.confidence }}%"></div></div>
+              <span class="conf-val">{{ entry.confidence }}%</span>
+            </div>
+          </td>
+          <td><span class="model-badge {{ 'model-cnn' if entry.model_used == 'CNN' else 'model-yolo' }}">{{ entry.model_used }}</span></td>
+          <td><span class="recycle-badge">♻️ {{ entry.recyclable }}</span></td>
+          <td style="font-size:12px;color:var(--text-3)">{{ entry.bin }}</td>
+          <td><span class="timestamp-text">{{ entry.timestamp }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% else %}
+
+  <div class="card">
+    <div class="empty-state">
+      <div class="empty-state-icon">📭</div>
+      <div class="empty-state-title">No detections yet</div>
+      <div class="empty-state-text">Run a static image or live camera detection to see results here.</div>
+      <div class="page-actions" style="justify-content:center;">
+        <a class="btn-action btn-primary" href="/static-detection">📤 Static Image Detection</a>
+        <a class="btn-action" href="/live-detection">🎥 Live Camera Detection</a>
+      </div>
+    </div>
+  </div>
+
+  {% endif %}
+
+</main>
+
+<script>
+  function filterTable(method, el) {
+    document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+
+    document.querySelectorAll('#summaryBody tr').forEach(row => {
+      if (method === 'all' || row.dataset.method === method) {
+        row.style.display = '';
+      } else {
+        row.style.display = 'none';
+      }
+    });
+  }
+
+  async function clearSummary() {
+    if (!confirm('Clear all detection results from the summary? This cannot be undone.')) return;
+    try {
+      await fetch('/summary/clear', { method: 'POST' });
+      window.location.reload();
+    } catch (err) {
+      alert('Failed to clear summary. Please try again.');
+    }
+  }
+</script>
+
+</body>
+</html>

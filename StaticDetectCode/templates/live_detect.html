@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EcoSort AI — Live Camera Detection</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --white:       #ffffff;
+    --bg:          #f7f8fa;
+    --surface:     #ffffff;
+    --border:      #e4e7ec;
+    --border-dark: #d0d5dd;
+    --text:        #101828;
+    --text-2:      #344054;
+    --text-3:      #667085;
+    --accent:      #16a34a;
+    --accent-light:#dcfce7;
+    --accent-dark: #15803d;
+    --danger:      #dc2626;
+    --danger-light:#fef2f2;
+    --info:        #2563eb;
+    --info-light:  #eff6ff;
+    --radius-sm:   6px;
+    --radius-md:   10px;
+    --radius-lg:   14px;
+    --shadow-sm:   0 1px 3px rgba(16,24,40,0.08);
+    --shadow-md:   0 4px 8px rgba(16,24,40,0.08);
+  }
+
+  body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 14px; line-height: 1.5; }
+
+  header { background: var(--white); border-bottom: 1px solid var(--border); padding: 0 32px; height: 60px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+  .header-left { display: flex; align-items: center; gap: 10px; }
+  .logo-icon { width: 32px; height: 32px; background: var(--accent); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; font-size: 16px; }
+  .logo-text { font-weight: 700; font-size: 16px; letter-spacing: -0.3px; }
+  .logo-text span { color: var(--accent); }
+  .header-badge { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 500; background: var(--info-light); color: #1e40af; padding: 2px 8px; border-radius: 20px; }
+  .header-right { display: flex; align-items: center; gap: 16px; font-size: 12px; color: var(--text-3); font-family: 'JetBrains Mono', monospace; }
+  .header-right a { color: var(--text-3); text-decoration: none; }
+  .header-right a:hover { color: var(--accent); }
+
+  main { max-width: 1100px; margin: 0 auto; padding: 32px 24px 80px; }
+  .page-title { font-size: 22px; font-weight: 700; letter-spacing: -0.4px; margin-bottom: 4px; }
+  .page-subtitle { color: var(--text-3); font-size: 14px; margin-bottom: 28px; }
+
+  .layout { display: grid; grid-template-columns: 1fr 320px; gap: 20px; align-items: start; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); overflow: hidden; }
+  .card-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .card-header-left { display: flex; align-items: center; gap: 8px; }
+  .card-title { font-weight: 600; font-size: 14px; }
+  .card-body { padding: 20px; }
+
+  /* Camera selector */
+  .camera-select-wrap { display: flex; align-items: center; gap: 8px; }
+  .camera-select {
+    font-family: 'Inter', sans-serif; font-size: 12px; padding: 5px 8px;
+    border: 1px solid var(--border-dark); border-radius: var(--radius-sm);
+    background: var(--white); color: var(--text-2); max-width: 220px;
+  }
+
+  /* Video container */
+  .video-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4/3;
+    background: #111;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+
+  #videoEl, #overlayCanvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+  }
+
+  .video-placeholder {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: #888; gap: 12px; text-align: center; padding: 20px;
+  }
+  .video-placeholder-icon { font-size: 40px; }
+
+  .live-badge {
+    position: absolute; top: 12px; left: 12px;
+    background: rgba(220,38,38,0.9); color: white;
+    font-size: 11px; font-weight: 600; padding: 4px 10px;
+    border-radius: 20px; display: none; align-items: center; gap: 6px;
+    font-family: 'JetBrains Mono', monospace; z-index: 10;
+  }
+  .live-dot { width: 7px; height: 7px; border-radius: 50%; background: white; animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  .fps-badge {
+    position: absolute; top: 12px; right: 12px;
+    background: rgba(0,0,0,0.65); color: #c6f6d5;
+    font-size: 11px; font-weight: 500; padding: 4px 10px;
+    border-radius: 20px; display: none;
+    font-family: 'JetBrains Mono', monospace; z-index: 10;
+  }
+
+  /* Controls */
+  .controls-row { display: flex; gap: 10px; margin-top: 16px; }
+  .btn { flex: 1; padding: 12px; border: none; border-radius: var(--radius-md); font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .btn-start { background: var(--accent); color: white; }
+  .btn-start:hover:not(:disabled) { background: var(--accent-dark); }
+  .btn-stop { background: var(--danger-light); color: var(--danger); border: 1px solid #fecaca; display: none; }
+  .btn-stop:hover { background: #fee2e2; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .error-msg { background: var(--danger-light); border: 1px solid #fecaca; color: var(--danger); border-radius: var(--radius-md); padding: 12px 14px; font-size: 13px; margin-top: 12px; display: none; }
+
+  /* Live detections sidebar */
+  .sidebar-stats { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+  .stat-box { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; }
+  .stat-label { font-size: 12px; color: var(--text-3); font-weight: 500; }
+  .stat-val { font-size: 16px; font-weight: 700; color: var(--accent); font-family: 'JetBrains Mono', monospace; }
+
+  .live-list { display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow-y: auto; }
+  .live-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+  .class-badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 20px; font-size: 11.5px; font-weight: 500; }
+  .class-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .badge-cardboard { background: #fff4e5; color: #b45309; } .badge-cardboard .class-dot { background: #f59e0b; }
+  .badge-glass     { background: #ecfdf5; color: #065f46; } .badge-glass     .class-dot { background: #10b981; }
+  .badge-metal     { background: #f8fafc; color: #475569; } .badge-metal     .class-dot { background: #94a3b8; }
+  .badge-paper     { background: #fefce8; color: #854d0e; } .badge-paper     .class-dot { background: #eab308; }
+  .badge-plastic   { background: #eff6ff; color: #1e40af; } .badge-plastic   .class-dot { background: #3b82f6; }
+  .live-conf { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--text-2); font-weight: 500; }
+
+  .empty-live { text-align: center; padding: 30px 10px; color: var(--text-3); font-size: 12.5px; }
+
+  .capture-row { margin-top: 14px; }
+  .btn-capture { width: 100%; padding: 10px; background: var(--white); border: 1px solid var(--border-dark); border-radius: var(--radius-md); font-size: 13px; font-weight: 500; color: var(--text-2); cursor: pointer; }
+  .btn-capture:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .btn-capture:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  @media (max-width: 768px) {
+    .layout { grid-template-columns: 1fr; }
+    header { padding: 0 16px; }
+    main { padding: 20px 16px 60px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div class="logo-icon">♻️</div>
+    <span class="logo-text">EcoSort <span>AI</span></span>
+    <span class="header-badge">🎥 Live Camera · YOLO Only</span>
+  </div>
+  <div class="header-right">
+    <a href="/">← Home</a>
+    <span>YOLOv8 · ecosort_v3</span>
+  </div>
+</header>
+
+<main>
+  <h1 class="page-title">Live Camera Detection</h1>
+  <p class="page-subtitle">Point your camera at a waste item to detect and classify it in real time. Running in YOLO-only mode for the fastest response.</p>
+
+  <div class="layout">
+
+    <!-- Camera card -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-header-left"><span>🎥</span><span class="card-title">Camera Feed</span></div>
+        <div class="camera-select-wrap">
+          <select class="camera-select" id="cameraSelect"><option>Loading cameras...</option></select>
+        </div>
+      </div>
+      <div class="card-body">
+
+        <div class="video-wrap" id="videoWrap">
+          <video id="videoEl" autoplay playsinline muted></video>
+          <canvas id="overlayCanvas"></canvas>
+          <div class="video-placeholder" id="videoPlaceholder">
+            <div class="video-placeholder-icon">📷</div>
+            <div>Click "Start Camera" to begin live detection</div>
+          </div>
+          <div class="live-badge" id="liveBadge"><span class="live-dot"></span>LIVE</div>
+          <div class="fps-badge" id="fpsBadge">0 ms</div>
+        </div>
+
+        <div class="controls-row">
+          <button class="btn btn-start" id="startBtn" onclick="startCamera()">▶ Start Camera</button>
+          <button class="btn btn-stop" id="stopBtn" onclick="stopCamera()">⏹ Stop Camera</button>
+        </div>
+
+        <div class="capture-row">
+          <button class="btn-capture" id="captureBtn" onclick="captureSnapshot()" disabled>📸 Save Current Frame to Detection Summary</button>
+        </div>
+
+        <div class="error-msg" id="errorMsg"></div>
+
+      </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="card">
+      <div class="card-header"><div class="card-header-left"><span>📊</span><span class="card-title">Live Detections</span></div></div>
+      <div class="card-body">
+
+        <div class="sidebar-stats">
+          <div class="stat-box"><span class="stat-label">Objects Detected</span><span class="stat-val" id="liveCount">0</span></div>
+          <div class="stat-box"><span class="stat-label">Frame Inference</span><span class="stat-val" id="liveTime">—</span></div>
+        </div>
+
+        <div class="live-list" id="liveList">
+          <div class="empty-live">No detections yet.<br>Start the camera and point it at a waste item.</div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<script>
+  const videoEl          = document.getElementById('videoEl');
+  const overlayCanvas    = document.getElementById('overlayCanvas');
+  const ctx               = overlayCanvas.getContext('2d');
+  const videoPlaceholder = document.getElementById('videoPlaceholder');
+  const liveBadge        = document.getElementById('liveBadge');
+  const fpsBadge         = document.getElementById('fpsBadge');
+  const startBtn         = document.getElementById('startBtn');
+  const stopBtn          = document.getElementById('stopBtn');
+  const captureBtn       = document.getElementById('captureBtn');
+  const cameraSelect     = document.getElementById('cameraSelect');
+  const errorMsg         = document.getElementById('errorMsg');
+  const liveList         = document.getElementById('liveList');
+  const liveCount        = document.getElementById('liveCount');
+  const liveTime         = document.getElementById('liveTime');
+
+  let stream         = null;
+  let detectInterval = null;
+  let isDetecting     = false;
+  const DETECT_EVERY_MS = 700; // throttle to avoid overloading the server
+
+  const CLASS_COLOURS = {
+    cardboard: '#f59e0b', glass: '#10b981', metal: '#94a3b8',
+    paper: '#eab308', plastic: '#3b82f6'
+  };
+
+  // ── Populate camera list ──────────────────────────────────
+  async function listCameras() {
+    try {
+      // Request permission first so device labels are populated
+      const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      tempStream.getTracks().forEach(t => t.stop());
+
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cams = devices.filter(d => d.kind === 'videoinput');
+
+      cameraSelect.innerHTML = '';
+      if (cams.length === 0) {
+        cameraSelect.innerHTML = '<option>No camera found</option>';
+        return;
+      }
+      cams.forEach((cam, i) => {
+        const opt = document.createElement('option');
+        opt.value = cam.deviceId;
+        opt.textContent = cam.label || `Camera ${i + 1}`;
+        cameraSelect.appendChild(opt);
+      });
+    } catch (err) {
+      cameraSelect.innerHTML = '<option>Camera permission denied</option>';
+      showError('Camera access was denied. Please allow camera permission in your browser.');
+    }
+  }
+  listCameras();
+
+  // ── Start camera ───────────────────────────────────────────
+  async function startCamera() {
+    hideError();
+    try {
+      const deviceId = cameraSelect.value;
+      const constraints = {
+        video: deviceId ? { deviceId: { exact: deviceId } } : true
+      };
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      videoEl.srcObject = stream;
+
+      videoEl.onloadedmetadata = () => {
+        overlayCanvas.width  = videoEl.videoWidth;
+        overlayCanvas.height = videoEl.videoHeight;
+      };
+
+      videoPlaceholder.style.display = 'none';
+      liveBadge.style.display  = 'flex';
+      fpsBadge.style.display   = 'block';
+      startBtn.style.display   = 'none';
+      stopBtn.style.display    = 'flex';
+      captureBtn.disabled      = false;
+      cameraSelect.disabled    = true;
+
+      detectInterval = setInterval(captureAndDetect, DETECT_EVERY_MS);
+    } catch (err) {
+      showError('Could not start camera. Make sure a camera is connected and permission is granted.');
+    }
+  }
+
+  // ── Stop camera ────────────────────────────────────────────
+  function stopCamera() {
+    if (detectInterval) clearInterval(detectInterval);
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    videoEl.srcObject = null;
+    ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+    videoPlaceholder.style.display = 'flex';
+    liveBadge.style.display  = 'none';
+    fpsBadge.style.display   = 'none';
+    startBtn.style.display   = 'flex';
+    stopBtn.style.display    = 'none';
+    captureBtn.disabled      = true;
+    cameraSelect.disabled    = false;
+
+    liveList.innerHTML = '<div class="empty-live">No detections yet.<br>Start the camera and point it at a waste item.</div>';
+    liveCount.textContent = '0';
+    liveTime.textContent  = '—';
+  }
+
+  // ── Capture frame + send to Flask for detection ─────────────
+  async function captureAndDetect() {
+    if (isDetecting || !stream) return;
+    isDetecting = true;
+
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width  = videoEl.videoWidth;
+    tempCanvas.height = videoEl.videoHeight;
+    const tctx = tempCanvas.getContext('2d');
+    tctx.drawImage(videoEl, 0, 0, tempCanvas.width, tempCanvas.height);
+
+    tempCanvas.toBlob(async (blob) => {
+      const formData = new FormData();
+      formData.append('frame', blob, 'frame.jpg');
+
+      try {
+        const resp = await fetch('/detect-frame', { method: 'POST', body: formData });
+        const data = await resp.json();
+        if (resp.ok) {
+          drawDetections(data.detections);
+          updateSidebar(data.detections, data.inference_time);
+        }
+      } catch (err) {
+        // Silently ignore single-frame failures to keep the loop running
+      } finally {
+        isDetecting = false;
+      }
+    }, 'image/jpeg', 0.7);
+  }
+
+  // ── Draw boxes on canvas overlay ─────────────────────────────
+  function drawDetections(detections) {
+    ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+    const w = overlayCanvas.width, h = overlayCanvas.height;
+
+    detections.forEach(det => {
+      const [nx1, ny1, nx2, ny2] = det.box_norm;
+      const x1 = nx1 * w, y1 = ny1 * h, x2 = nx2 * w, y2 = ny2 * h;
+      const colour = CLASS_COLOURS[det.class] || '#16a34a';
+
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+
+      const label = `${det.class} ${det.confidence}%`;
+      ctx.font = 'bold 14px Inter, sans-serif';
+      const textW = ctx.measureText(label).width;
+      ctx.fillStyle = colour;
+      ctx.fillRect(x1, Math.max(0, y1 - 22), textW + 12, 22);
+      ctx.fillStyle = '#000';
+      ctx.fillText(label, x1 + 6, Math.max(14, y1 - 6));
+    });
+  }
+
+  // ── Update sidebar list ───────────────────────────────────────
+  function updateSidebar(detections, inferenceTime) {
+    liveCount.textContent = detections.length;
+    liveTime.textContent  = inferenceTime + 'ms';
+    fpsBadge.textContent  = inferenceTime + 'ms';
+
+    if (detections.length === 0) {
+      liveList.innerHTML = '<div class="empty-live">No waste detected in current frame.</div>';
+      return;
+    }
+
+    liveList.innerHTML = detections.map(det => `
+      <div class="live-item">
+        <span class="class-badge badge-${det.class}"><span class="class-dot"></span>${det.class}</span>
+        <span class="live-conf">${det.confidence}%</span>
+      </div>
+    `).join('');
+  }
+
+  // ── Capture snapshot to Detection Summary ──────────────────────
+  async function captureSnapshot() {
+    if (!stream) return;
+    captureBtn.disabled = true;
+    captureBtn.textContent = '⏳ Saving frame...';
+
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width  = videoEl.videoWidth;
+    tempCanvas.height = videoEl.videoHeight;
+    const tctx = tempCanvas.getContext('2d');
+    tctx.drawImage(videoEl, 0, 0, tempCanvas.width, tempCanvas.height);
+
+    tempCanvas.toBlob(async (blob) => {
+      const formData = new FormData();
+      formData.append('frame', blob, 'capture.jpg');
+
+      try {
+        const resp = await fetch('/capture-frame', { method: 'POST', body: formData });
+        const data = await resp.json();
+        if (resp.ok) {
+          captureBtn.textContent = `✅ Saved (${data.total} detection${data.total !== 1 ? 's' : ''}) — added to Summary`;
+        } else {
+          captureBtn.textContent = '⚠️ Failed to save frame';
+        }
+      } catch (err) {
+        captureBtn.textContent = '⚠️ Connection error';
+      } finally {
+        setTimeout(() => {
+          captureBtn.textContent = '📸 Save Current Frame to Detection Summary';
+          captureBtn.disabled = !stream;
+        }, 2200);
+      }
+    }, 'image/jpeg', 0.85);
+  }
+
+  function showError(msg) { errorMsg.textContent = '⚠️ ' + msg; errorMsg.style.display = 'block'; }
+  function hideError()    { errorMsg.style.display = 'none'; }
+
+  window.addEventListener('beforeunload', stopCamera);
+</script>
+
+</body>
+</html>

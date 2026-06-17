@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EcoSort AI — Static Image Detection</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --white:       #ffffff;
+    --bg:          #f7f8fa;
+    --surface:     #ffffff;
+    --border:      #e4e7ec;
+    --border-dark: #d0d5dd;
+    --text:        #101828;
+    --text-2:      #344054;
+    --text-3:      #667085;
+    --accent:      #16a34a;
+    --accent-light:#dcfce7;
+    --accent-dark: #15803d;
+    --danger:      #dc2626;
+    --info:        #2563eb;
+    --info-light:  #eff6ff;
+    --radius-sm:   6px;
+    --radius-md:   10px;
+    --radius-lg:   14px;
+    --shadow-sm:   0 1px 3px rgba(16,24,40,0.08);
+    --shadow-md:   0 4px 8px rgba(16,24,40,0.08);
+  }
+
+  body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 14px; line-height: 1.5; }
+
+  header { background: var(--white); border-bottom: 1px solid var(--border); padding: 0 32px; height: 60px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+  .header-left { display: flex; align-items: center; gap: 10px; }
+  .logo-icon { width: 32px; height: 32px; background: var(--accent); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; font-size: 16px; }
+  .logo-text { font-weight: 700; font-size: 16px; letter-spacing: -0.3px; }
+  .logo-text span { color: var(--accent); }
+  .header-badge { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 500; background: var(--accent-light); color: var(--accent-dark); padding: 2px 8px; border-radius: 20px; }
+  .mode-badge { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 500; padding: 2px 8px; border-radius: 20px; }
+  .mode-hybrid { background: #eff6ff; color: #1e40af; }
+  .mode-yolo   { background: #fef9c3; color: #854d0e; }
+  .header-right { display: flex; align-items: center; gap: 16px; font-size: 12px; color: var(--text-3); font-family: 'JetBrains Mono', monospace; }
+  .header-right a { color: var(--text-3); text-decoration: none; }
+  .header-right a:hover { color: var(--accent); }
+
+  main { max-width: 1100px; margin: 0 auto; padding: 32px 24px 80px; }
+  .page-title { font-size: 22px; font-weight: 700; letter-spacing: -0.4px; margin-bottom: 4px; }
+  .page-subtitle { color: var(--text-3); font-size: 14px; margin-bottom: 28px; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); overflow: hidden; margin-bottom: 20px; }
+  .card-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .card-header-left { display: flex; align-items: center; gap: 8px; }
+  .card-title { font-weight: 600; font-size: 14px; }
+  .card-body { padding: 20px; }
+
+  /* Upload zone */
+  .upload-zone { border: 2px dashed var(--border-dark); border-radius: var(--radius-md); padding: 32px 20px; text-align: center; cursor: pointer; transition: all 0.2s; background: var(--bg); position: relative; }
+  .upload-zone:hover, .upload-zone.dragover { border-color: var(--accent); background: var(--accent-light); }
+  .upload-zone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+  .upload-icon { font-size: 32px; margin-bottom: 10px; display: block; }
+  .upload-title { font-weight: 600; font-size: 14px; color: var(--text-2); margin-bottom: 4px; }
+  .upload-sub { font-size: 12px; color: var(--text-3); }
+
+  /* Selected files strip */
+  .files-strip { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+  .file-chip { display: flex; align-items: center; gap: 8px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 10px; max-width: 220px; }
+  .file-chip img { width: 32px; height: 32px; object-fit: cover; border-radius: 6px; flex-shrink: 0; }
+  .file-chip-info { overflow: hidden; }
+  .file-chip-name { font-size: 11.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; }
+  .file-chip-size { font-size: 10.5px; color: var(--text-3); font-family: 'JetBrains Mono', monospace; }
+  .file-chip-remove { margin-left: auto; cursor: pointer; color: var(--text-3); font-size: 16px; line-height: 1; padding: 2px; flex-shrink: 0; }
+  .file-chip-remove:hover { color: var(--danger); }
+
+  .btn-detect { width: 100%; margin-top: 16px; padding: 12px; background: var(--accent); color: white; border: none; border-radius: var(--radius-md); font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .btn-detect:hover:not(:disabled) { background: var(--accent-dark); transform: translateY(-1px); box-shadow: var(--shadow-md); }
+  .btn-detect:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.6s linear infinite; display: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .error-msg { background: #fef2f2; border: 1px solid #fecaca; color: var(--danger); border-radius: var(--radius-md); padding: 12px 14px; font-size: 13px; margin-top: 12px; display: none; }
+
+  /* Overall stats bar */
+  .overall-stats { display: none; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 8px; }
+  .stat-box { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 14px; text-align: center; }
+  .stat-val { font-size: 20px; font-weight: 700; color: var(--accent); font-family: 'JetBrains Mono', monospace; line-height: 1; margin-bottom: 4px; }
+  .stat-label { font-size: 11px; color: var(--text-3); font-weight: 500; }
+
+  /* Per-image result card */
+  .result-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); overflow: hidden; margin-bottom: 16px; }
+  .result-card-header { padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: var(--bg); }
+  .result-card-title { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .result-index { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-3); background: var(--white); border: 1px solid var(--border); padding: 2px 7px; border-radius: 5px; }
+  .result-card-meta { font-size: 11px; color: var(--text-3); font-family: 'JetBrains Mono', monospace; }
+
+  .result-layout { display: grid; grid-template-columns: 280px 1fr; gap: 0; }
+  .result-image-col { border-right: 1px solid var(--border); }
+  .result-image-col img { width: 100%; display: block; max-height: 240px; object-fit: contain; background: var(--bg); }
+  .result-image-actions { padding: 8px 12px; background: var(--bg); }
+  .btn-save-sm { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; background: var(--white); border: 1px solid var(--border-dark); border-radius: var(--radius-sm); font-size: 11px; font-weight: 500; color: var(--text-2); text-decoration: none; }
+  .btn-save-sm:hover { border-color: var(--accent); color: var(--accent); }
+
+  .result-table-col { padding: 14px 16px; }
+
+  .det-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .det-table th { text-align: left; padding: 6px 8px; font-size: 10.5px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--border); }
+  .det-table td { padding: 7px 8px; border-bottom: 1px solid var(--border); color: var(--text-2); vertical-align: middle; }
+  .det-table tr:last-child td { border-bottom: none; }
+
+  .class-badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 20px; font-size: 11.5px; font-weight: 500; }
+  .class-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .badge-cardboard { background: #fff4e5; color: #b45309; } .badge-cardboard .class-dot { background: #f59e0b; }
+  .badge-glass     { background: #ecfdf5; color: #065f46; } .badge-glass     .class-dot { background: #10b981; }
+  .badge-metal     { background: #f8fafc; color: #475569; } .badge-metal     .class-dot { background: #94a3b8; }
+  .badge-paper     { background: #fefce8; color: #854d0e; } .badge-paper     .class-dot { background: #eab308; }
+  .badge-plastic   { background: #eff6ff; color: #1e40af; } .badge-plastic   .class-dot { background: #3b82f6; }
+
+  .conf-wrap { display: flex; align-items: center; gap: 6px; }
+  .conf-bar-bg { flex: 1; height: 4px; background: var(--border); border-radius: 3px; overflow: hidden; min-width: 50px; }
+  .conf-bar-fill { height: 100%; border-radius: 3px; background: var(--accent); }
+  .conf-val { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; min-width: 34px; text-align: right; }
+
+  .model-badge { display: inline-flex; align-items: center; font-size: 9.5px; font-weight: 600; padding: 1px 6px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; }
+  .model-cnn  { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+  .model-yolo { background: #fef9c3; color: #854d0e; border: 1px solid #fde68a; }
+
+  .recycle-badge { display: inline-flex; font-size: 10.5px; font-weight: 500; padding: 1px 7px; border-radius: 20px; background: var(--accent-light); color: var(--accent-dark); }
+
+  .no-detection-row { text-align: center; padding: 16px; color: var(--text-3); font-size: 12.5px; }
+
+  .results-wrap { display: none; }
+
+  @media (max-width: 768px) {
+    .result-layout { grid-template-columns: 1fr; }
+    .result-image-col { border-right: none; border-bottom: 1px solid var(--border); }
+    .overall-stats { grid-template-columns: repeat(2, 1fr); }
+    header { padding: 0 16px; }
+    main { padding: 20px 16px 60px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div class="logo-icon">♻️</div>
+    <span class="logo-text">EcoSort <span>AI</span></span>
+    <span class="header-badge">v7.0</span>
+    <span class="mode-badge {% if hybrid_mode %}mode-hybrid{% else %}mode-yolo{% endif %}">
+      {% if hybrid_mode %}⚡ YOLO + CNN Hybrid{% else %}YOLO only{% endif %}
+    </span>
+  </div>
+  <div class="header-right">
+    <a href="/">← Home</a>
+    <span>YOLOv8 · ecosort_v3{% if hybrid_mode %} · ResNet18 CNN{% endif %}</span>
+  </div>
+</header>
+
+<main>
+  <h1 class="page-title">Static Image Detection</h1>
+  <p class="page-subtitle">Upload one or more images to detect and classify recyclable waste materials.</p>
+
+  <!-- Upload Card -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-header-left"><span>📤</span><span class="card-title">Upload Images</span></div>
+    </div>
+    <div class="card-body">
+
+      <div class="upload-zone" id="uploadZone">
+        <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.bmp,.webp" multiple>
+        <span class="upload-icon">🖼️</span>
+        <div class="upload-title">Drop images here or click to browse</div>
+        <div class="upload-sub">Supports JPG, PNG, BMP, WEBP · Multiple files allowed · Max 16MB each</div>
+      </div>
+
+      <div class="files-strip" id="filesStrip"></div>
+
+      <div class="error-msg" id="errorMsg"></div>
+
+      <button class="btn-detect" id="detectBtn" disabled onclick="runDetection()">
+        <div class="spinner" id="spinner"></div>
+        <span id="btnText">Select image(s) to begin</span>
+      </button>
+
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div class="results-wrap" id="resultsWrap">
+
+    <div class="overall-stats" id="overallStats">
+      <div class="stat-box"><div class="stat-val" id="statImages">0</div><div class="stat-label">Images Processed</div></div>
+      <div class="stat-box"><div class="stat-val" id="statTotal">0</div><div class="stat-label">Total Detections</div></div>
+      <div class="stat-box"><div class="stat-val" id="statCNN">0</div><div class="stat-label">CNN Overrides</div></div>
+      <div class="stat-box"><div class="stat-val" id="statTime">0ms</div><div class="stat-label">Total Inference Time</div></div>
+    </div>
+
+    <div id="perImageResults"></div>
+
+  </div>
+
+</main>
+
+<script>
+  const fileInput   = document.getElementById('fileInput');
+  const uploadZone  = document.getElementById('uploadZone');
+  const filesStrip  = document.getElementById('filesStrip');
+  const detectBtn   = document.getElementById('detectBtn');
+  const btnText     = document.getElementById('btnText');
+  const spinner     = document.getElementById('spinner');
+  const errorMsg    = document.getElementById('errorMsg');
+
+  let selectedFiles = [];
+
+  fileInput.addEventListener('change', () => addFiles(fileInput.files));
+  uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+  uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+  uploadZone.addEventListener('drop', e => {
+    e.preventDefault(); uploadZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files);
+  });
+
+  function addFiles(fileList) {
+    hideError();
+    for (const file of fileList) {
+      if (!selectedFiles.some(f => f.name === file.name && f.size === file.size)) {
+        selectedFiles.push(file);
+      }
+    }
+    renderFileChips();
+    updateDetectButton();
+  }
+
+  function removeFile(index) {
+    selectedFiles.splice(index, 1);
+    renderFileChips();
+    updateDetectButton();
+  }
+
+  function renderFileChips() {
+    filesStrip.innerHTML = '';
+    selectedFiles.forEach((file, i) => {
+      const reader = new FileReader();
+      const chip = document.createElement('div');
+      chip.className = 'file-chip';
+      chip.innerHTML = `
+        <img id="chipImg${i}" src="" alt="">
+        <div class="file-chip-info">
+          <div class="file-chip-name">${file.name}</div>
+          <div class="file-chip-size">${formatBytes(file.size)}</div>
+        </div>
+        <span class="file-chip-remove" onclick="removeFile(${i})">×</span>
+      `;
+      filesStrip.appendChild(chip);
+      reader.onload = e => { document.getElementById(`chipImg${i}`).src = e.target.result; };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function updateDetectButton() {
+    detectBtn.disabled = selectedFiles.length === 0;
+    btnText.textContent = selectedFiles.length === 0
+      ? 'Select image(s) to begin'
+      : `Detect Waste (${selectedFiles.length} image${selectedFiles.length > 1 ? 's' : ''})`;
+  }
+
+  function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
+    return (bytes/(1024*1024)).toFixed(1) + ' MB';
+  }
+
+  async function runDetection() {
+    if (selectedFiles.length === 0) return;
+    hideError(); setLoading(true); resetResults();
+
+    const formData = new FormData();
+    selectedFiles.forEach(file => formData.append('images', file));
+
+    try {
+      const resp = await fetch('/detect', { method: 'POST', body: formData });
+      const data = await resp.json();
+      if (!resp.ok) { showError(data.error || 'Detection failed.'); return; }
+      displayResults(data);
+    } catch (err) {
+      showError('Connection error. Make sure the Flask server is running.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function displayResults(data) {
+    const resultsWrap     = document.getElementById('resultsWrap');
+    const overallStats    = document.getElementById('overallStats');
+    const perImageResults = document.getElementById('perImageResults');
+
+    resultsWrap.style.display  = 'block';
+    overallStats.style.display = 'grid';
+    perImageResults.innerHTML  = '';
+
+    // Overall stats across all images
+    let totalDetections = 0, totalCNN = 0, totalTime = 0;
+    data.results.forEach(r => {
+      totalDetections += r.total;
+      totalCNN        += r.detections.filter(d => d.model_used === 'CNN').length;
+      totalTime        += r.inference_time;
+    });
+
+    document.getElementById('statImages').textContent = data.results.length;
+    document.getElementById('statTotal').textContent   = totalDetections;
+    document.getElementById('statCNN').textContent     = totalCNN;
+    document.getElementById('statTime').textContent    = Math.round(totalTime) + 'ms';
+
+    // One card per image
+    data.results.forEach((r, idx) => {
+      const card = document.createElement('div');
+      card.className = 'result-card';
+
+      let tableRows;
+      if (r.detections.length === 0) {
+        tableRows = `<div class="no-detection-row">No waste objects detected in this image.</div>`;
+      } else {
+        const rows = r.detections.map(det => {
+          const isCNN = det.model_used === 'CNN';
+          return `
+            <tr>
+              <td>
+                <span class="class-badge badge-${det.class}">
+                  <span class="class-dot"></span>${det.class}
+                </span>
+              </td>
+              <td>
+                <div class="conf-wrap">
+                  <div class="conf-bar-bg"><div class="conf-bar-fill" style="width:${det.confidence}%"></div></div>
+                  <span class="conf-val">${det.confidence}%</span>
+                </div>
+              </td>
+              <td><span class="model-badge ${isCNN ? 'model-cnn' : 'model-yolo'}">${det.model_used}</span></td>
+              <td><span class="recycle-badge">♻️ ${det.recyclable}</span></td>
+              <td style="font-size:11.5px;color:var(--text-3)">${det.bin}</td>
+            </tr>`;
+        }).join('');
+
+        tableRows = `
+          <table class="det-table">
+            <thead><tr><th>Class</th><th>Confidence</th><th>Model</th><th>Recyclable</th><th>Bin</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>`;
+      }
+
+      card.innerHTML = `
+        <div class="result-card-header">
+          <div class="result-card-title">
+            <span class="result-index">#${idx + 1}</span>
+            ${r.input_filename}
+          </div>
+          <div class="result-card-meta">${r.total} detection${r.total !== 1 ? 's' : ''} · ${r.inference_time}ms</div>
+        </div>
+        <div class="result-layout">
+          <div class="result-image-col">
+            <img src="/result/${r.output_filename}?t=${Date.now()}" alt="Detection result">
+            <div class="result-image-actions">
+              <a class="btn-save-sm" href="/save/${r.output_filename}" download>💾 Save Result</a>
+            </div>
+          </div>
+          <div class="result-table-col">${tableRows}</div>
+        </div>
+      `;
+      perImageResults.appendChild(card);
+    });
+  }
+
+  function resetResults() {
+    document.getElementById('resultsWrap').style.display     = 'none';
+    document.getElementById('overallStats').style.display    = 'none';
+    document.getElementById('perImageResults').innerHTML     = '';
+  }
+
+  function setLoading(loading) {
+    detectBtn.disabled    = loading || selectedFiles.length === 0;
+    spinner.style.display = loading ? 'block' : 'none';
+    if (loading) btnText.textContent = `Detecting ${selectedFiles.length} image${selectedFiles.length > 1 ? 's' : ''}...`;
+    else updateDetectButton();
+  }
+
+  function showError(msg) { errorMsg.textContent = '⚠️ ' + msg; errorMsg.style.display = 'block'; }
+  function hideError()    { errorMsg.style.display = 'none'; }
+</script>
+
+</body>
+</html>

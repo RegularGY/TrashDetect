@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EcoSort AI — Waste Detection System</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --white:       #ffffff;
+    --bg:          #f7f8fa;
+    --surface:     #ffffff;
+    --border:      #e4e7ec;
+    --border-dark: #d0d5dd;
+    --text:        #101828;
+    --text-2:      #344054;
+    --text-3:      #667085;
+    --accent:      #16a34a;
+    --accent-light:#dcfce7;
+    --accent-dark: #15803d;
+    --info:        #2563eb;
+    --info-light:  #eff6ff;
+    --radius-sm:   6px;
+    --radius-md:   10px;
+    --radius-lg:   14px;
+    --radius-xl:   18px;
+    --shadow-sm:   0 1px 3px rgba(16,24,40,0.08);
+    --shadow-md:   0 4px 8px rgba(16,24,40,0.08);
+    --shadow-lg:   0 12px 24px rgba(16,24,40,0.10);
+  }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  header {
+    background: var(--white);
+    border-bottom: 1px solid var(--border);
+    padding: 0 32px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .header-left { display: flex; align-items: center; gap: 10px; }
+  .logo-icon { width: 32px; height: 32px; background: var(--accent); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; font-size: 16px; }
+  .logo-text { font-weight: 700; font-size: 16px; letter-spacing: -0.3px; }
+  .logo-text span { color: var(--accent); }
+  .header-badge { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 500; background: var(--accent-light); color: var(--accent-dark); padding: 2px 8px; border-radius: 20px; }
+  .header-right { font-size: 12px; color: var(--text-3); font-family: 'JetBrains Mono', monospace; }
+
+  main {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 80px 24px 100px;
+    text-align: center;
+  }
+
+  .hero-icon {
+    font-size: 56px;
+    margin-bottom: 20px;
+  }
+
+  .page-title {
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.6px;
+    margin-bottom: 10px;
+  }
+
+  .page-subtitle {
+    color: var(--text-3);
+    font-size: 15px;
+    margin-bottom: 56px;
+    max-width: 520px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .choice-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    max-width: 760px;
+    margin: 0 auto;
+  }
+
+  .choice-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    padding: 40px 28px;
+    text-decoration: none;
+    color: var(--text);
+    box-shadow: var(--shadow-sm);
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    cursor: pointer;
+  }
+
+  .choice-card:hover {
+    border-color: var(--accent);
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-3px);
+  }
+
+  .choice-icon-wrap {
+    width: 72px;
+    height: 72px;
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    margin-bottom: 22px;
+  }
+
+  .icon-static { background: var(--accent-light); }
+  .icon-camera { background: var(--info-light); }
+
+  .choice-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    letter-spacing: -0.2px;
+  }
+
+  .choice-desc {
+    font-size: 13px;
+    color: var(--text-3);
+    line-height: 1.6;
+    margin-bottom: 22px;
+  }
+
+  .choice-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+    margin-bottom: 22px;
+  }
+
+  .tag {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .tag-static { background: var(--accent-light); color: var(--accent-dark); }
+  .tag-camera { background: var(--info-light); color: #1e40af; }
+
+  .choice-cta {
+    width: 100%;
+    padding: 11px;
+    border-radius: var(--radius-md);
+    font-size: 13.5px;
+    font-weight: 600;
+    transition: all 0.15s ease;
+  }
+
+  .cta-static { background: var(--accent); color: white; }
+  .choice-card:hover .cta-static { background: var(--accent-dark); }
+
+  .cta-camera { background: var(--info); color: white; }
+  .choice-card:hover .cta-camera { background: #1d4ed8; }
+
+  .footer-note {
+    margin-top: 48px;
+    font-size: 12px;
+    color: var(--text-3);
+  }
+
+  .footer-note a {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  @media (max-width: 700px) {
+    .choice-grid { grid-template-columns: 1fr; }
+    main { padding: 48px 20px 60px; }
+    .page-title { font-size: 24px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div class="logo-icon">♻️</div>
+    <span class="logo-text">EcoSort <span>AI</span></span>
+    <span class="header-badge">v7.0</span>
+  </div>
+  <div class="header-right">YOLOv8 · ResNet18 CNN · Hybrid</div>
+</header>
+
+<main>
+  <div class="hero-icon">♻️</div>
+  <h1 class="page-title">Waste Detection System</h1>
+  <p class="page-subtitle">
+    Choose how you would like to detect and classify recyclable waste materials.
+    Both modes use the same hybrid YOLOv8 and ResNet18 CNN detection pipeline.
+  </p>
+
+  <div class="choice-grid">
+
+    <!-- Static Image Detection -->
+    <a href="/static-detection" class="choice-card">
+      <div class="choice-icon-wrap icon-static">📷</div>
+      <div class="choice-title">Static Image Detection</div>
+      <div class="choice-desc">
+        Upload one or more images of waste materials and let the system
+        detect and classify each item with detailed results.
+      </div>
+      <div class="choice-tags">
+        <span class="tag tag-static">Multiple Images</span>
+        <span class="tag tag-static">Drag &amp; Drop</span>
+      </div>
+      <div class="choice-cta cta-static">Use Static Image Detection →</div>
+    </a>
+
+    <!-- Live Camera Detection -->
+    <a href="/live-detection" class="choice-card">
+      <div class="choice-icon-wrap icon-camera">🎥</div>
+      <div class="choice-title">Live Camera Detection</div>
+      <div class="choice-desc">
+        Use your webcam to detect recyclable waste in real time as you
+        point the camera at different objects.
+      </div>
+      <div class="choice-tags">
+        <span class="tag tag-camera">Real-Time</span>
+        <span class="tag tag-camera">Webcam</span>
+      </div>
+      <div class="choice-cta cta-camera">Use Live Camera Detection →</div>
+    </a>
+
+  </div>
+
+  <p class="footer-note">
+    All detection results from both modes are saved to your <a href="/summary">Detection Summary</a>
+  </p>
+</main>
+
+</body>
+</html>

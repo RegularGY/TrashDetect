@@ -25,6 +25,7 @@ This project uses a phased dataset strategy combined with a hybrid YOLO + CNN ar
 | Phase 5.5 | HTML + Flask web UI | ✅ Complete |
 | Phase 6 | YOLO + CNN hybrid | ✅ Complete |
 | Phase 7 | Final testing and evaluation | 🔄 In Progress |
+| Phase 8 | Multi-image upload, live camera detection, detection summary, PDF export | ✅ Complete |
 
 ---
 
@@ -50,6 +51,8 @@ Draw bounding box + label + confidence + model indicator
 Save to Result(Output)/
 ```
 
+> **Note on Live Camera mode:** to maintain a smooth real-time frame rate, the live camera detection pipeline runs **YOLO-only** with lightweight CLAHE contrast enhancement (no Gaussian blur, no CNN refinement) on every streamed frame. The full hybrid pipeline above (including CNN) is only applied when a frame is explicitly captured via the **Save Current Frame to Detection Summary** button, since that is a one-off operation rather than a continuous stream.
+
 ---
 
 ## Requirements
@@ -63,6 +66,7 @@ Save to Result(Output)/
 - Python 3.12
 - CUDA Toolkit 12.1
 - Git
+- A modern browser (Chrome/Edge recommended) with camera permission enabled, for the Live Camera Detection feature
 
 ---
 
@@ -128,13 +132,16 @@ Dataset/
 TrashDetect/
 ├── run.bat                        ← double click to launch the web UI
 ├── StaticDetectCode/
-│   ├── app.py                     ← Flask web server (hybrid mode)
+│   ├── app.py                     ← Flask web server (hybrid + multi-image + live camera + summary + PDF export)
 │   ├── detect.py                  ← command-line inference script (hybrid mode)
 │   ├── generate_crops.py          ← generates CNN training crops from YOLO
 │   ├── train_cnn.py               ← trains ResNet18 CNN classifier
 │   ├── requirements.txt           ← package dependencies
 │   ├── templates/
-│   │   └── index.html             ← web UI
+│   │   ├── landing.html           ← landing page (choose Static Image or Live Camera)
+│   │   ├── static_detect.html     ← static image detection UI (multi-image upload)
+│   │   ├── live_detect.html       ← live camera detection UI (browser webcam)
+│   │   └── summary.html           ← detection summary page (combines both methods)
 │   └── ecosort-env/               ← virtual environment (not pushed)
 ├── Dataset/
 │   ├── data.yaml                  ← dataset config
@@ -159,13 +166,28 @@ Simply double click `run.bat` in the root folder. It will:
 2. Start the Flask server
 3. Open the browser at `http://127.0.0.1:5000`
 
-From the web UI you can:
-- Upload any image by drag and drop or file browser
-- Click **Detect Waste** to run detection
-- View the annotated result image with bounding boxes
-- See a detection summary table showing class, confidence, which model decided (YOLO or CNN), recyclability and bin colour
-- Track CNN override count — how many detections were refined by CNN
-- Click **Save Result** to download the annotated image
+You'll land on the **home page**, where you can choose between two detection modes:
+
+#### 📤 Static Image Detection
+- Upload **one or more images** at once by drag and drop or file browser
+- Click **Detect Waste** to run detection on all uploaded images
+- Each image gets its own result card showing the annotated image with bounding boxes, a detection table (class, confidence, model used, recyclability, bin colour), and a Save Result button
+- An overall stats bar shows total images processed, total detections, CNN overrides, and total inference time across all images
+
+#### 🎥 Live Camera Detection
+- Select any available camera from the dropdown — built-in laptop webcam or a plugged-in USB camera are both detected automatically by the browser
+- Click **Start Camera** to begin real-time detection (YOLO-only mode, with lightweight CLAHE contrast enhancement, for smooth frame rate)
+- Bounding boxes are drawn live on screen as objects are detected
+- Click **Save Current Frame to Detection Summary** to run the full hybrid YOLO+CNN pipeline on the current frame and save it
+- Click **Stop Camera** when finished
+
+#### 📊 Detection Summary
+- Accessible from the home page footer or after any detection
+- Shows **all results from both Static Image and Live Camera** sessions in one combined table, tagged by method
+- Filter by method using the tabs (All / Static Image / Live Camera)
+- Stats overview: total detections, static count, camera count, CNN overrides, unique classes
+- **Download PDF Report** — generates a single combined PDF with a cover page and separate sections for Static Image and Live Camera detections, each with the annotated image and a results table
+- **Clear All** — resets the in-memory detection summary (note: the summary resets automatically when the Flask server restarts, since it is stored in memory only)
 
 ### Option B — Command Line
 
@@ -288,6 +310,7 @@ Detection is run on the preprocessed image but bounding boxes are drawn on the o
 - [PyTorch](https://pytorch.org/) — deep learning framework
 - [OpenCV](https://opencv.org/) — image preprocessing and bounding box rendering
 - [Flask](https://flask.palletsprojects.com/) — web server for UI
+- [ReportLab](https://www.reportlab.com/) — PDF detection report generation
 - [Roboflow](https://roboflow.com/) — dataset annotation and management
 - [CUDA 12.1](https://developer.nvidia.com/cuda-12-1-0-download-archive) — GPU acceleration
 
@@ -296,7 +319,3 @@ Detection is run on the preprocessed image but bounding boxes are drawn on the o
 ## References
 
 This project is developed as part of a final year project at UiTM, addressing waste management challenges in Malaysia.
-
----
-
-
