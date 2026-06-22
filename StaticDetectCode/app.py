@@ -11,6 +11,7 @@ import os
 import sys
 import time
 import uuid
+import json
 from pathlib import Path
 
 import cv2
@@ -19,7 +20,7 @@ import torch
 import torch.nn as nn
 from torchvision import models, transforms
 from PIL import Image
-from flask import Flask, render_template, request, jsonify, send_from_directory, send_file
+from flask import Flask, render_template, request, jsonify, send_from_directory, send_file, make_response
 from ultralytics import YOLO
 
 from reportlab.lib.pagesizes import A4
@@ -36,10 +37,15 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT
 #  CONFIG
 # ─────────────────────────────────────────────
 
-YOLO_PATH       = r"C:\Users\Victus\Documents\GitHub\TrashDetect\runs\detect\ecosort_v3\weights\best.pt"
-CNN_PATH        = r"C:\Users\Victus\Documents\GitHub\TrashDetect\runs\cnn\ecosort_cnn_v1.pt"
-UPLOAD_FOLDER   = r"C:\Users\Victus\Documents\GitHub\TrashDetect\Test_Image(Input)"
-OUTPUT_FOLDER   = r"C:\Users\Victus\Documents\GitHub\TrashDetect\Result(Output)"
+YOLO_PATH            = r"C:\Users\Victus\Documents\GitHub\TrashDetect\runs\detect\ecosort_v4\weights\best.pt"
+CNN_PATH             = r"C:\Users\Victus\Documents\GitHub\TrashDetect\runs\cnn\ecosort_cnn_v2.pt"
+UPLOAD_FOLDER        = r"C:\Users\Victus\Documents\GitHub\TrashDetect\Test_Image(Input)"
+OUTPUT_FOLDER        = r"C:\Users\Victus\Documents\GitHub\TrashDetect\Result(Output)"
+CNN_FEEDBACK_FOLDER  = r"C:\Users\Victus\Documents\GitHub\TrashDetect\CNN_Feedback"
+YOLO_FEEDBACK_FOLDER = r"C:\Users\Victus\Documents\GitHub\TrashDetect\YOLO_Feedback"
+FEEDBACK_LOG         = r"C:\Users\Victus\Documents\GitHub\TrashDetect\feedback.json"
+
+CLASSES = ['cardboard', 'glass', 'metal', 'paper', 'plastic']
 
 YOLO_CONFIDENCE      = 0.50
 CNN_CONF_THRESHOLD   = 0.70
@@ -76,6 +82,26 @@ app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 
 Path(UPLOAD_FOLDER).mkdir(parents=True, exist_ok=True)
 Path(OUTPUT_FOLDER).mkdir(parents=True, exist_ok=True)
+
+# ── Feedback dataset folders ──────────────────────────────────
+# CNN_Feedback: cropped images sorted by corrected class
+for cls in CLASSES:
+    Path(CNN_FEEDBACK_FOLDER, cls).mkdir(parents=True, exist_ok=True)
+
+# YOLO_Feedback: full images + auto-generated label files
+Path(YOLO_FEEDBACK_FOLDER, 'images').mkdir(parents=True, exist_ok=True)
+Path(YOLO_FEEDBACK_FOLDER, 'labels').mkdir(parents=True, exist_ok=True)
+
+# Initialise feedback.json if it doesn't exist
+if not Path(FEEDBACK_LOG).exists():
+    with open(FEEDBACK_LOG, 'w') as f:
+        import json as _json
+        _json.dump([], f)
+
+print("[INFO] Feedback folders ready.")
+print(f"[INFO]   CNN  feedback → {CNN_FEEDBACK_FOLDER}")
+print(f"[INFO]   YOLO feedback → {YOLO_FEEDBACK_FOLDER}")
+print(f"[INFO]   Feedback log  → {FEEDBACK_LOG}")
 
 # ─────────────────────────────────────────────
 #  IN-MEMORY DETECTION SUMMARY STORE
@@ -375,7 +401,7 @@ def summary():
     cnn_cnt     = sum(1 for d in DETECTION_SUMMARY if d["model_used"] == "CNN")
     unique_cls  = len(set(d["class"] for d in DETECTION_SUMMARY))
 
-    return render_template(
+    response = make_response(render_template(
         "summary.html",
         entries=list(reversed(DETECTION_SUMMARY)),  # newest first
         total=total,
@@ -383,14 +409,221 @@ def summary():
         camera_cnt=camera_cnt,
         cnn_cnt=cnn_cnt,
         unique_cls=unique_cls,
+    ))
+    # Prevent browser from caching this page so corrected state
+    # is always reflected correctly when navigating back
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"]        = "no-cache"
+    response.headers["Expires"]       = "0"
+    return response
+
+
+@app.route("/summary/delete/<int:entry_id>", methods=["POST"])
+def delete_summary_entry(entry_id):
+    """
+    Deletes a single entry from the in-memory Detection Summary.
+    Used to remove blurry, duplicate, or unwanted detection entries
+    before downloading the PDF report.
+    Note: this does not affect feedback.json or the feedback dataset
+    since deletion only removes the summary entry, not any saved crops.
+    """
+    global DETECTION_SUMMARY
+    original_len = len(DETECTION_SUMMARY)
+    DETECTION_SUMMARY = [e for e in DETECTION_SUMMARY if e["id"] != entry_id]
+
+    if len(DETECTION_SUMMARY) < original_len:
+        return jsonify({"status": "deleted", "id": entry_id})
+    else:
+        return jsonify({"error": "Entry not found."}), 404
+
+
+@app.route("/feedback-log")
+def feedback_log():
+    """Read-only page showing all corrections made so far."""
+    try:
+        with open(FEEDBACK_LOG, 'r') as f:
+            log = json.load(f)
+    except (json.JSONDecodeError, FileNotFoundError):
+        log = []
+
+    total_corrections = len(log)
+    cnn_saved  = sum(1 for e in log if e.get('cnn_saved'))
+    yolo_saved = sum(1 for e in log if e.get('yolo_saved'))
+    ready_to_retrain = total_corrections >= 20
+
+    return render_template(
+        "feedback_log.html",
+        entries=list(reversed(log)),
+        total_corrections=total_corrections,
+        cnn_saved=cnn_saved,
+        yolo_saved=yolo_saved,
+        ready_to_retrain=ready_to_retrain,
     )
 
 
 @app.route("/summary/clear", methods=["POST"])
 def clear_summary():
-    """Clears all entries from the in-memory detection summary."""
+    """Clears ALL entries from the in-memory detection summary and resets the ID counter.
+    Works regardless of whether entries are corrected or not."""
+    global _summary_id_counter
     DETECTION_SUMMARY.clear()
-    return jsonify({"status": "cleared"})
+    _summary_id_counter = 0
+    return jsonify({"status": "cleared", "total": 0})
+
+
+@app.route("/feedback", methods=["POST"])
+def feedback():
+    """
+    Handles user category correction from the Detection Summary page.
+
+    For each corrected detection:
+    1. Re-crops the object from the saved output image
+    2. Saves the crop to CNN_Feedback/[corrected_class]/ for CNN retraining
+    3. Saves the full output image + auto-generated YOLO label file
+       to YOLO_Feedback/ for YOLO retraining
+    4. Logs the correction to feedback.json
+    5. Updates the in-memory DETECTION_SUMMARY entry
+
+    Note: YOLO retraining feedback is only generated when the output
+    image exists and the original bounding box coordinates are available.
+    This covers cases where YOLO correctly localised the object but
+    assigned the wrong class label — the most common correction scenario.
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data received."}), 400
+
+    entry_id       = data.get("id")
+    corrected_class = data.get("corrected_class", "").lower().strip()
+
+    if corrected_class not in CLASSES:
+        return jsonify({"error": f"Invalid class: {corrected_class}"}), 400
+
+    # Find the entry in DETECTION_SUMMARY
+    entry = next((e for e in DETECTION_SUMMARY if e["id"] == entry_id), None)
+    if not entry:
+        return jsonify({"error": "Detection entry not found."}), 404
+
+    original_class  = entry["class"]
+    output_filename = entry["output_filename"]
+    method          = entry["method"]
+    source_filename = entry["source_filename"]
+    confidence      = entry["confidence"]
+    model_used      = entry["model_used"]
+
+    # ── Step 1: Load saved output image ──────────────────────────
+    output_path = Path(OUTPUT_FOLDER) / output_filename
+    if not output_path.exists():
+        return jsonify({"error": "Output image not found on disk."}), 404
+
+    image = cv2.imread(str(output_path))
+    if image is None:
+        return jsonify({"error": "Could not read output image."}), 400
+
+    h, w = image.shape[:2]
+
+    # ── Step 2: Re-run YOLO on the output image to get box coords ─
+    # We run YOLO on the original image to get normalised coordinates
+    # needed for the YOLO label file. This ensures we have accurate
+    # box positions even if the output image has annotations drawn on it.
+    yolo_results = yolo_model(image, conf=YOLO_CONFIDENCE, iou=0.45, verbose=False)
+
+    cnn_crop      = None
+    box_norm      = None   # [x_center, y_center, width, height] normalised
+
+    for result in yolo_results:
+        if result.boxes is None or len(result.boxes) == 0:
+            continue
+        # Pick the highest-confidence detection as the primary object
+        best_box = max(result.boxes, key=lambda b: float(b.conf[0]))
+        x1, y1, x2, y2 = map(int, best_box.xyxy[0].tolist())
+
+        # CNN crop (224x224) for CNN_Feedback
+        pad  = 5
+        cx1  = max(0, x1 - pad)
+        cy1  = max(0, y1 - pad)
+        cx2  = min(w, x2 + pad)
+        cy2  = min(h, y2 + pad)
+        crop = image[cy1:cy2, cx1:cx2]
+        if crop.size > 0:
+            cnn_crop = cv2.resize(crop, (CNN_SIZE, CNN_SIZE))
+
+        # YOLO normalised box coordinates
+        bx_center = ((x1 + x2) / 2) / w
+        by_center = ((y1 + y2) / 2) / h
+        bw        = (x2 - x1) / w
+        bh        = (y2 - y1) / h
+        box_norm  = [bx_center, by_center, bw, bh]
+        break
+
+    uid = uuid.uuid4().hex[:10]
+
+    # ── Step 3: Save CNN crop ─────────────────────────────────────
+    cnn_saved = False
+    if cnn_crop is not None:
+        cnn_path = Path(CNN_FEEDBACK_FOLDER) / corrected_class / f"{corrected_class}_{uid}.jpg"
+        cv2.imwrite(str(cnn_path), cnn_crop)
+        cnn_saved = True
+
+    # ── Step 4: Save YOLO full image + label file ─────────────────
+    yolo_saved = False
+    if box_norm is not None:
+        class_id   = CLASSES.index(corrected_class)
+        label_line = f"{class_id} {box_norm[0]:.6f} {box_norm[1]:.6f} {box_norm[2]:.6f} {box_norm[3]:.6f}"
+
+        yolo_img_path   = Path(YOLO_FEEDBACK_FOLDER) / 'images' / f"{uid}.jpg"
+        yolo_label_path = Path(YOLO_FEEDBACK_FOLDER) / 'labels' / f"{uid}.txt"
+
+        cv2.imwrite(str(yolo_img_path), image)
+        yolo_label_path.write_text(label_line)
+        yolo_saved = True
+
+    # ── Step 5: Log to feedback.json ──────────────────────────────
+    feedback_entry = {
+        "id":               uid,
+        "summary_entry_id": entry_id,
+        "method":           method,
+        "source_filename":  source_filename,
+        "output_filename":  output_filename,
+        "original_class":   original_class,
+        "corrected_class":  corrected_class,
+        "confidence":       confidence,
+        "model_used":       model_used,
+        "cnn_saved":        cnn_saved,
+        "yolo_saved":       yolo_saved,
+        "timestamp":        time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+    try:
+        with open(FEEDBACK_LOG, 'r') as f:
+            log = json.load(f)
+    except (json.JSONDecodeError, FileNotFoundError):
+        log = []
+
+    log.append(feedback_entry)
+
+    with open(FEEDBACK_LOG, 'w') as f:
+        json.dump(log, f, indent=2)
+
+    # ── Step 6: Update in-memory Detection Summary ────────────────
+    info = CLASS_INFO.get(corrected_class, {"recyclable": "Unknown", "bin": "Unknown"})
+    entry["class"]      = corrected_class
+    entry["recyclable"] = info["recyclable"]
+    entry["bin"]        = info["bin"]
+    entry["corrected"]  = True
+
+    print(f"[FEEDBACK] #{entry_id} corrected: {original_class} → {corrected_class} "
+          f"| CNN saved: {cnn_saved} | YOLO saved: {yolo_saved}")
+
+    return jsonify({
+        "status":          "saved",
+        "original_class":  original_class,
+        "corrected_class": corrected_class,
+        "recyclable":      info["recyclable"],
+        "bin":             info["bin"],
+        "cnn_saved":       cnn_saved,
+        "yolo_saved":      yolo_saved,
+    })
 
 
 @app.route("/summary/download")

@@ -194,6 +194,34 @@
           <button class="btn btn-stop" id="stopBtn" onclick="stopCamera()">⏹ Stop Camera</button>
         </div>
 
+        <!-- Auto-save toggle -->
+        <div style="margin-top:12px;display:flex;align-items:center;justify-content:space-between;
+                    background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-md);
+                    padding:10px 14px;">
+          <div>
+            <div style="font-size:13px;font-weight:600;color:var(--text-2);">🔄 Auto-Save Mode</div>
+            <div style="font-size:11.5px;color:var(--text-3);margin-top:2px;">
+              Automatically saves one frame when an object is detected, then waits until it leaves the frame before saving again.
+            </div>
+          </div>
+          <label style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;margin-left:12px;">
+            <input type="checkbox" id="autoSaveToggle" onchange="toggleAutoSave(this.checked)"
+                   style="opacity:0;width:0;height:0;">
+            <span id="autoSaveSlider" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;
+                  background:#ccc;border-radius:24px;transition:.3s;">
+              <span style="position:absolute;content:'';height:18px;width:18px;left:3px;bottom:3px;
+                    background:white;border-radius:50%;transition:.3s;display:block;" id="autoSaveKnob"></span>
+            </span>
+          </label>
+        </div>
+
+        <!-- Auto-save status badge -->
+        <div id="autoSaveBadge" style="display:none;margin-top:10px;text-align:center;
+             background:#f0fdf4;border:1px solid #86efac;border-radius:var(--radius-md);
+             padding:8px 14px;font-size:12.5px;font-weight:600;color:var(--accent-dark);">
+          ✅ Auto-saved to Detection Summary!
+        </div>
+
         <div class="capture-row">
           <button class="btn-capture" id="captureBtn" onclick="captureSnapshot()" disabled>📸 Save Current Frame to Detection Summary</button>
         </div>
@@ -348,6 +376,7 @@
         if (resp.ok) {
           drawDetections(data.detections);
           updateSidebar(data.detections, data.inference_time);
+          handleAutoSave(data.detections);
         }
       } catch (err) {
         // Silently ignore single-frame failures to keep the loop running
@@ -433,6 +462,73 @@
         }, 2200);
       }
     }, 'image/jpeg', 0.85);
+  }
+
+  // ── Auto-save state machine ───────────────────────────────────
+  // States: IDLE (ready to save) / WAITING (already saved, waiting for object to leave)
+  let autoSaveEnabled = false;
+  let autoSaveState   = 'IDLE'; // 'IDLE' or 'WAITING'
+
+  function toggleAutoSave(enabled) {
+    autoSaveEnabled = enabled;
+    const slider = document.getElementById('autoSaveSlider');
+    const knob   = document.getElementById('autoSaveKnob');
+    if (enabled) {
+      slider.style.background = '#16a34a';
+      knob.style.transform    = 'translateX(20px)';
+      autoSaveState           = 'IDLE';
+    } else {
+      slider.style.background = '#ccc';
+      knob.style.transform    = 'translateX(0)';
+      autoSaveState           = 'IDLE';
+    }
+  }
+
+  function handleAutoSave(detections) {
+    if (!autoSaveEnabled || !stream) return;
+
+    if (detections.length > 0) {
+      // Object detected
+      if (autoSaveState === 'IDLE') {
+        // First detection — auto-save this frame
+        autoSaveState = 'WAITING';
+        triggerAutoCapture();
+      }
+      // If WAITING — object still present, do nothing
+    } else {
+      // No detections — object left the frame, reset to IDLE
+      if (autoSaveState === 'WAITING') {
+        autoSaveState = 'IDLE';
+      }
+    }
+  }
+
+  async function triggerAutoCapture() {
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width  = videoEl.videoWidth;
+    tempCanvas.height = videoEl.videoHeight;
+    const tctx = tempCanvas.getContext('2d');
+    tctx.drawImage(videoEl, 0, 0, tempCanvas.width, tempCanvas.height);
+
+    tempCanvas.toBlob(async (blob) => {
+      const formData = new FormData();
+      formData.append('frame', blob, 'auto_capture.jpg');
+      try {
+        const resp = await fetch('/capture-frame', { method: 'POST', body: formData });
+        const data = await resp.json();
+        if (resp.ok && data.total > 0) {
+          showAutoSaveBadge();
+        }
+      } catch (err) {
+        // Silent fail — don't disrupt the live feed
+      }
+    }, 'image/jpeg', 0.85);
+  }
+
+  function showAutoSaveBadge() {
+    const badge = document.getElementById('autoSaveBadge');
+    badge.style.display = 'block';
+    setTimeout(() => { badge.style.display = 'none'; }, 2500);
   }
 
   function showError(msg) { errorMsg.textContent = '⚠️ ' + msg; errorMsg.style.display = 'block'; }

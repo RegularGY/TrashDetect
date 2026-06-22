@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EcoSort AI — Feedback Log</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --white:#ffffff; --bg:#f7f8fa; --surface:#ffffff; --border:#e4e7ec;
+    --border-dark:#d0d5dd; --text:#101828; --text-2:#344054; --text-3:#667085;
+    --accent:#16a34a; --accent-light:#dcfce7; --accent-dark:#15803d;
+    --info:#2563eb; --info-light:#eff6ff;
+    --warning:#d97706; --warning-light:#fffbeb;
+    --radius-sm:6px; --radius-md:10px; --radius-lg:14px;
+    --shadow-sm:0 1px 3px rgba(16,24,40,0.08);
+  }
+  body { font-family:'Inter',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; font-size:14px; }
+  header { background:var(--white); border-bottom:1px solid var(--border); padding:0 32px; height:60px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:100; }
+  .header-left { display:flex; align-items:center; gap:10px; }
+  .logo-icon { width:32px; height:32px; background:var(--accent); border-radius:var(--radius-sm); display:flex; align-items:center; justify-content:center; font-size:16px; }
+  .logo-text { font-weight:700; font-size:16px; }
+  .logo-text span { color:var(--accent); }
+  .header-badge { font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:500; background:var(--warning-light); color:var(--warning); padding:2px 8px; border-radius:20px; }
+  .header-right { display:flex; align-items:center; gap:16px; font-size:12px; color:var(--text-3); font-family:'JetBrains Mono',monospace; }
+  .header-right a { color:var(--text-3); text-decoration:none; }
+  .header-right a:hover { color:var(--accent); }
+
+  main { max-width:1100px; margin:0 auto; padding:32px 24px 80px; }
+  .page-title { font-size:22px; font-weight:700; margin-bottom:4px; }
+  .page-subtitle { color:var(--text-3); font-size:14px; margin-bottom:28px; }
+
+  .stats-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px; }
+  .stat-box { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:16px; text-align:center; box-shadow:var(--shadow-sm); }
+  .stat-val { font-size:24px; font-weight:700; color:var(--accent); font-family:'JetBrains Mono',monospace; margin-bottom:6px; }
+  .stat-label { font-size:11.5px; color:var(--text-3); font-weight:500; }
+
+  .retrain-card { border-radius:var(--radius-lg); padding:20px 24px; margin-bottom:20px; }
+  .retrain-ready { background:#f0fdf4; border:1px solid #86efac; }
+  .retrain-waiting { background:var(--warning-light); border:1px solid #fde68a; }
+  .retrain-title { font-size:15px; font-weight:700; margin-bottom:8px; }
+  .retrain-ready .retrain-title { color:var(--accent-dark); }
+  .retrain-waiting .retrain-title { color:var(--warning); }
+  .retrain-text { font-size:13px; line-height:1.6; }
+  .retrain-ready .retrain-text { color:#166534; }
+  .retrain-waiting .retrain-text { color:#92400e; }
+  .retrain-cmd { background:rgba(0,0,0,0.06); border-radius:var(--radius-sm); padding:8px 14px; font-family:'JetBrains Mono',monospace; font-size:12px; margin-top:10px; display:inline-block; }
+
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); box-shadow:var(--shadow-sm); overflow:hidden; }
+  .det-table { width:100%; border-collapse:collapse; font-size:13px; }
+  .det-table th { text-align:left; padding:10px 12px; font-size:11px; font-weight:600; color:var(--text-3); text-transform:uppercase; letter-spacing:0.05em; background:var(--bg); border-bottom:1px solid var(--border); white-space:nowrap; }
+  .det-table td { padding:10px 12px; border-bottom:1px solid var(--border); color:var(--text-2); vertical-align:middle; }
+  .det-table tr:last-child td { border-bottom:none; }
+  .det-table tr:hover td { background:var(--bg); }
+
+  .arrow { font-size:16px; color:var(--accent); font-weight:700; }
+  .class-old { color:var(--text-3); text-decoration:line-through; font-size:12px; }
+  .class-new { font-weight:600; color:var(--accent-dark); font-size:12px; }
+  .saved-badge { display:inline-flex; font-size:10px; font-weight:600; padding:2px 6px; border-radius:4px; font-family:'JetBrains Mono',monospace; margin-right:4px; }
+  .saved-yes { background:var(--accent-light); color:var(--accent-dark); border:1px solid #86efac; }
+  .saved-no  { background:#f8fafc; color:#94a3b8; border:1px solid #e2e8f0; }
+
+  .method-badge { display:inline-flex; font-size:11px; font-weight:600; padding:2px 8px; border-radius:20px; }
+  .method-static { background:var(--accent-light); color:var(--accent-dark); }
+  .method-camera { background:var(--info-light); color:#1e40af; }
+
+  .empty-state { padding:60px 20px; text-align:center; color:var(--text-3); }
+
+  .btn-action { display:inline-flex; align-items:center; gap:6px; padding:9px 16px; border-radius:var(--radius-md); font-size:13px; font-weight:600; cursor:pointer; border:1px solid var(--border-dark); background:var(--white); color:var(--text-2); text-decoration:none; transition:all 0.15s; }
+  .btn-action:hover { border-color:var(--accent); color:var(--accent); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div class="logo-icon">♻️</div>
+    <span class="logo-text">EcoSort <span>AI</span></span>
+    <span class="header-badge">🗂 Feedback Log</span>
+  </div>
+  <div class="header-right">
+    <a href="/summary">← Detection Summary</a>
+    <a href="/">Home</a>
+  </div>
+</header>
+
+<main>
+  <h1 class="page-title">Feedback Log</h1>
+  <p class="page-subtitle">All category corrections made by users. When enough corrections are collected, run the retraining scripts to improve the model.</p>
+
+  <!-- Stats -->
+  <div class="stats-grid">
+    <div class="stat-box"><div class="stat-val">{{ total_corrections }}</div><div class="stat-label">Total Corrections</div></div>
+    <div class="stat-box"><div class="stat-val">{{ cnn_saved }}</div><div class="stat-label">CNN Crops Saved</div></div>
+    <div class="stat-box"><div class="stat-val">{{ yolo_saved }}</div><div class="stat-label">YOLO Labels Saved</div></div>
+    <div class="stat-box"><div class="stat-val">{{ 20 - total_corrections if total_corrections < 20 else '✅' }}</div><div class="stat-label">{{ 'Until Retrain Ready' if total_corrections < 20 else 'Ready to Retrain' }}</div></div>
+  </div>
+
+  <!-- Retraining status card -->
+  {% if ready_to_retrain %}
+  <div class="retrain-card retrain-ready">
+    <div class="retrain-title">✅ Ready to Retrain — {{ total_corrections }} corrections collected</div>
+    <div class="retrain-text">
+      You have collected enough corrections to retrain both models. Run the following scripts from your project root to apply the feedback:
+    </div>
+    <div class="retrain-cmd">python StaticDetectCode/retrain_cnn.py</div>
+    <div class="retrain-cmd" style="margin-left:12px;">python StaticDetectCode/retrain_yolo.py</div>
+    <div class="retrain-text" style="margin-top:10px;">
+      After retraining, update CNN_PATH and YOLO_PATH in app.py to point to the new model weights, then restart Flask.
+    </div>
+  </div>
+  {% else %}
+  <div class="retrain-card retrain-waiting">
+    <div class="retrain-title">⏳ Collecting Corrections — {{ total_corrections }}/20 collected</div>
+    <div class="retrain-text">
+      Continue collecting corrections until at least 20 are saved. More corrections produce better retraining results.
+      A minimum of 20 is recommended before running the retraining scripts.
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Corrections table -->
+  <div class="card">
+    {% if entries %}
+    <table class="det-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Method</th>
+          <th>Source</th>
+          <th>Correction</th>
+          <th>Original Confidence</th>
+          <th>Model</th>
+          <th>CNN Saved</th>
+          <th>YOLO Saved</th>
+          <th>Timestamp</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in entries %}
+        <tr>
+          <td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3)">{{ loop.index }}</td>
+          <td>
+            <span class="method-badge {{ 'method-static' if entry.method == 'Static Image' else 'method-camera' }}">
+              {{ '📤' if entry.method == 'Static Image' else '🎥' }} {{ entry.method }}
+            </span>
+          </td>
+          <td style="font-size:12px;color:var(--text-3);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ entry.source_filename }}</td>
+          <td>
+            <span class="class-old">{{ entry.original_class }}</span>
+            <span class="arrow"> → </span>
+            <span class="class-new">{{ entry.corrected_class }}</span>
+          </td>
+          <td style="font-family:'JetBrains Mono',monospace;font-size:12px;">{{ entry.confidence }}%</td>
+          <td style="font-family:'JetBrains Mono',monospace;font-size:11px;">{{ entry.model_used }}</td>
+          <td>
+            <span class="saved-badge {{ 'saved-yes' if entry.cnn_saved else 'saved-no' }}">
+              {{ '✅ CNN' if entry.cnn_saved else '— CNN' }}
+            </span>
+          </td>
+          <td>
+            <span class="saved-badge {{ 'saved-yes' if entry.yolo_saved else 'saved-no' }}">
+              {{ '✅ YOLO' if entry.yolo_saved else '— YOLO' }}
+            </span>
+          </td>
+          <td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);white-space:nowrap;">{{ entry.timestamp }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+      <div style="font-size:36px;margin-bottom:12px;">🗂</div>
+      <div style="font-size:15px;font-weight:600;color:var(--text-2);margin-bottom:6px;">No corrections yet</div>
+      <div style="font-size:13px;">Use the ✏️ Fix button on the Detection Summary page to correct wrong classifications.</div>
+    </div>
+    {% endif %}
+  </div>
+
+</main>
+</body>
+</html>

@@ -26,6 +26,7 @@ This project uses a phased dataset strategy combined with a hybrid YOLO + CNN ar
 | Phase 6 | YOLO + CNN hybrid | ✅ Complete |
 | Phase 7 | Final testing and evaluation | 🔄 In Progress |
 | Phase 8 | Multi-image upload, live camera detection, detection summary, PDF export | ✅ Complete |
+| Phase 9 | Human-in-the-loop feedback mechanism + model retraining | ✅ Complete |
 
 ---
 
@@ -132,16 +133,19 @@ Dataset/
 TrashDetect/
 ├── run.bat                        ← double click to launch the web UI
 ├── StaticDetectCode/
-│   ├── app.py                     ← Flask web server (hybrid + multi-image + live camera + summary + PDF export)
+│   ├── app.py                     ← Flask web server (hybrid + multi-image + live camera + summary + PDF export + feedback)
 │   ├── detect.py                  ← command-line inference script (hybrid mode)
 │   ├── generate_crops.py          ← generates CNN training crops from YOLO
-│   ├── train_cnn.py               ← trains ResNet18 CNN classifier
+│   ├── train_cnn.py               ← initial CNN training script
+│   ├── retrain_cnn.py             ← CNN retraining script (uses feedback corrections)
+│   ├── retrain_yolo.py            ← YOLO retraining script (uses feedback corrections)
 │   ├── requirements.txt           ← package dependencies
 │   ├── templates/
 │   │   ├── landing.html           ← landing page (choose Static Image or Live Camera)
 │   │   ├── static_detect.html     ← static image detection UI (multi-image upload)
-│   │   ├── live_detect.html       ← live camera detection UI (browser webcam)
-│   │   └── summary.html           ← detection summary page (combines both methods)
+│   │   ├── live_detect.html       ← live camera detection UI (browser webcam + auto-save)
+│   │   ├── summary.html           ← detection summary page (view, fix, delete entries)
+│   │   └── feedback_log.html      ← feedback corrections log and retraining readiness
 │   └── ecosort-env/               ← virtual environment (not pushed)
 ├── Dataset/
 │   ├── data.yaml                  ← dataset config
@@ -149,6 +153,16 @@ TrashDetect/
 │   ├── valid/                     ← validation images (not pushed)
 │   └── test/                      ← test images (not pushed)
 ├── CNN_Dataset/                   ← cropped CNN training images (not pushed)
+├── CNN_Feedback/                  ← user-corrected crops for CNN retraining (auto-created)
+│   ├── cardboard/
+│   ├── glass/
+│   ├── metal/
+│   ├── paper/
+│   └── plastic/
+├── YOLO_Feedback/                 ← auto-generated YOLO labels for retraining (auto-created)
+│   ├── images/
+│   └── labels/
+├── feedback.json                  ← log of all user corrections (auto-created)
 ├── Test_Image(Input)/             ← place test images here (CLI mode)
 ├── Result(Output)/                ← detection results saved here
 ├── .gitignore
@@ -184,10 +198,17 @@ You'll land on the **home page**, where you can choose between two detection mod
 #### 📊 Detection Summary
 - Accessible from the home page footer or after any detection
 - Shows **all results from both Static Image and Live Camera** sessions in one combined table, tagged by method
-- Filter by method using the tabs (All / Static Image / Live Camera)
+- Filter by method using the tabs (All / Static Image / Live Camera / Corrected)
 - Stats overview: total detections, static count, camera count, CNN overrides, unique classes
-- **Download PDF Report** — generates a single combined PDF with a cover page and separate sections for Static Image and Live Camera detections, each with the annotated image and a results table
-- **Clear All** — resets the in-memory detection summary (note: the summary resets automatically when the Flask server restarts, since it is stored in memory only)
+- **🖼 View & Fix** — click on any row to open a popup showing the full annotated image. If the category is wrong, select the correct class from the dropdown and confirm. The correction is saved to the feedback dataset automatically
+- **🗑 Delete** — remove any blurry or unwanted entry before downloading the PDF
+- **Download PDF Report** — generates a single combined PDF with a cover page and separate sections for Static Image and Live Camera detections
+- **Clear All** — resets the in-memory detection summary
+
+#### 🗂 Feedback Log
+- View all category corrections made in the current session at `/feedback-log`
+- Shows original → corrected class, CNN/YOLO saved status, and retraining readiness
+- Displays a "Ready to Retrain" indicator when 20+ corrections are collected
 
 ### Option B — Command Line
 
@@ -217,6 +238,50 @@ python detect.py --model "path/to/best.pt" --cnn "path/to/cnn.pt"
 ```
 
 Results are saved to `Result(Output)/` with bounding boxes, class labels, confidence scores, and model indicators overlaid.
+
+---
+
+## Human-in-the-Loop Feedback & Retraining
+
+EcoSort AI includes a feedback mechanism that allows users to correct wrong classifications directly from the Detection Summary page. Corrections are saved to a structured feedback dataset and can be used to retrain both models.
+
+### How it works
+
+1. Run a detection (static image or live camera)
+2. Go to the Detection Summary page (`/summary`)
+3. Click **🖼 View & Fix** on any wrongly classified entry
+4. View the full annotated image in the popup
+5. Select the correct class from the dropdown and confirm
+6. The corrected crop is saved automatically to `CNN_Feedback/` and `YOLO_Feedback/`
+7. View all corrections at `/feedback-log`
+
+### Retraining
+
+When enough corrections are collected (recommended minimum: 20):
+
+**Retrain CNN** (~17 minutes):
+```bash
+python StaticDetectCode/retrain_cnn.py
+```
+
+**Retrain YOLO** (~55 minutes):
+```bash
+python StaticDetectCode/retrain_yolo.py
+```
+
+After retraining, update the model paths in `app.py`:
+```python
+YOLO_PATH = r"...\runs\detect\ecosort_v4\weights\best.pt"
+CNN_PATH  = r"...\runs\cnn\ecosort_cnn_v2.pt"
+```
+Then restart Flask.
+
+### Validated results
+
+After collecting 17 user corrections and retraining:
+- CNN accuracy improved from **93.0% → 98.0% (+5.0%)**
+- Previously misclassified objects were correctly classified after retraining
+- YOLO mAP50 improved from **91.1% → 91.7% (+0.6%)**
 
 ---
 
@@ -290,6 +355,17 @@ Detection is run on the preprocessed image but bounding boxes are drawn on the o
 | Paper | 0.935 | 0.870 | 0.938 |
 | Plastic | 0.921 | 0.820 | 0.925 |
 
+### YOLO — ecosort_v4 (Retrained with user feedback, 2,209 images)
+
+| Class | Precision | Recall | mAP50 |
+|-------|-----------|--------|-------|
+| All | 0.911 | 0.844 | 0.917 |
+| Cardboard | 0.902 | 0.745 | 0.838 |
+| Glass | 0.930 | 0.790 | 0.908 |
+| Metal | 0.913 | 0.919 | 0.955 |
+| Paper | 0.932 | 0.886 | 0.944 |
+| Plastic | 0.879 | 0.880 | 0.941 |
+
 ### CNN — ecosort_cnn_v1 (ResNet18, 3,779 crops)
 
 | Metric | Value |
@@ -300,6 +376,18 @@ Detection is run on the preprocessed image but bounding boxes are drawn on the o
 | Best validation accuracy | **93.0%** |
 | Training time | 16.9 minutes |
 | CNN override threshold | 70% confidence |
+
+### CNN — ecosort_cnn_v2 (Retrained with 17 user feedback corrections)
+
+| Metric | Value |
+|--------|-------|
+| Architecture | ResNet18 (fine-tuned from ecosort_cnn_v1) |
+| Training images | 3,038 (original + feedback) |
+| Validation images | 759 |
+| Best validation accuracy | **98.0% (+5.0%)** |
+| Training time | 17.0 minutes |
+| Feedback crops used | 17 |
+| Improvement | Previously misclassified objects (metal can → paper, coffee cup → glass) now correctly classified |
 
 ---
 
