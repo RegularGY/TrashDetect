@@ -37,8 +37,8 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT
 #  CONFIG
 # ─────────────────────────────────────────────
 
-YOLO_PATH            = r"C:\Users\Victus\Documents\GitHub\TrashDetect\runs\detect\ecosort_v4\weights\best.pt"
-CNN_PATH             = r"C:\Users\Victus\Documents\GitHub\TrashDetect\runs\cnn\ecosort_cnn_v2.pt"
+YOLO_PATH            = r"C:\Users\Victus\Documents\GitHub\TrashDetect\runs\detect\ecosort_v5\weights\best.pt"
+CNN_PATH             = r"C:\Users\Victus\Documents\GitHub\TrashDetect\runs\cnn\ecosort_cnn_v3.pt"
 UPLOAD_FOLDER        = r"C:\Users\Victus\Documents\GitHub\TrashDetect\Test_Image(Input)"
 OUTPUT_FOLDER        = r"C:\Users\Victus\Documents\GitHub\TrashDetect\Result(Output)"
 CNN_FEEDBACK_FOLDER  = r"C:\Users\Victus\Documents\GitHub\TrashDetect\CNN_Feedback"
