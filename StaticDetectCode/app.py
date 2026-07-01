@@ -78,10 +78,14 @@ CLASS_INFO = {
 # ─────────────────────────────────────────────
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
 
 Path(UPLOAD_FOLDER).mkdir(parents=True, exist_ok=True)
 Path(OUTPUT_FOLDER).mkdir(parents=True, exist_ok=True)
+
+@app.errorhandler(413)
+def too_large(e):
+    return jsonify({"error": "File too large. Please upload images under 32MB each."}), 413
 
 # ── Feedback dataset folders ──────────────────────────────────
 # CNN_Feedback: cropped images sorted by corrected class

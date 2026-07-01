@@ -9,6 +9,10 @@
 #    python detect.py --source "path/to/image.jpg"
 #    python detect.py --source "path/to/folder/"
 #    python detect.py  (uses default Test_Image(Input)/ folder)
+#    ecosort-env\Scripts\activate
+#    cd C:\Users\Victus\Documents\GitHub\TrashDetect (root for retrain)
+#    python StaticDetectCode/retrain_cnn.py (retrain CNN)
+#    python StaticDetectCode/retrain_yolo.py (retrain YOLO)
 # =============================================================
 
 import argparse
@@ -310,9 +314,12 @@ def run_detection(source, model_path, cnn_path, output_folder, conf_threshold):
 
         # Preprocess for YOLO
         image_processed = preprocess_image(image)
+        
 
         # Run YOLO
-        results = yolo_model(image_processed, conf=conf_threshold, verbose=False)
+
+
+        results = yolo_model(image_processed, conf=conf_threshold, iou=0.45, verbose=False)
 
         for result in results:
             boxes = result.boxes
